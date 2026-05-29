@@ -1,0 +1,22 @@
+{
+  "name": "server",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "db:push": "drizzle-kit push",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.4.2",
+    "drizzle-orm": "^0.45.2",
+    "elysia": "^1.4.28",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5.8.0"
+  }
+}
