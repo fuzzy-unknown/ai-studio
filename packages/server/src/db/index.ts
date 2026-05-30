@@ -85,6 +85,62 @@ try {
 }
 catch {}
 
+function safeParseJson(value: string | null): any {
+  if (!value)
+    return null
+  try {
+    return JSON.parse(value)
+  }
+  catch {
+    return value
+  }
+}
+
+function inferInputMediaType(model: string | null, url: string, index: number): string {
+  if (model === 'happyhorse-1.0-video-edit')
+    return 'reference_image'
+  if (model === 'happyhorse-1.0-r2v')
+    return 'reference_image'
+  if (model === 'happyhorse-1.0-i2v')
+    return 'first_frame'
+  if (model?.startsWith('qwen-image'))
+    return 'input_image'
+  if (url.startsWith('data:audio') || /\.(?:mp3|wav)(?:\?|$)/i.test(url))
+    return 'driving_audio'
+  if (url.startsWith('data:video') || /\.(?:mp4|mov)(?:\?|$)/i.test(url))
+    return 'first_clip'
+  return index === 1 ? 'last_frame' : 'first_frame'
+}
+
+// 迁移：input_image_url 统一规范化为 { type, url }[]
+try {
+  const inputRows = sqlite
+    .query<{ id: number, model: string | null, input_image_url: string | null }, []>(
+      'SELECT id, model, input_image_url FROM tasks WHERE input_image_url IS NOT NULL',
+    )
+    .all()
+  const updateInput = sqlite.prepare('UPDATE tasks SET input_image_url = ? WHERE id = ?')
+  for (const row of inputRows) {
+    const parsed = safeParseJson(row.input_image_url)
+    const rawItems = Array.isArray(parsed) ? parsed : [parsed]
+    const media = rawItems
+      .map((item, index) => {
+        if (typeof item === 'string')
+          return { type: inferInputMediaType(row.model, item, index), url: item }
+        if (item && typeof item === 'object' && typeof item.url === 'string') {
+          return {
+            type: typeof item.type === 'string' ? item.type : inferInputMediaType(row.model, item.url, index),
+            url: item.url,
+          }
+        }
+        return null
+      })
+      .filter(Boolean)
+    updateInput.run(JSON.stringify(media), row.id)
+  }
+}
+catch {}
+
 // 定价配置表
 sqlite.run(`
   CREATE TABLE IF NOT EXISTS pricing (
@@ -128,6 +184,7 @@ const imagePricing: [string, string, number][] = [
   ['qwen-image-2.0', '2048*2048', 0.2],
   ['qwen-image-max', '1664*928', 0.5],
   ['qwen-image-plus', '1664*928', 0.2],
+  ['qwen-image', '1664*928', 0.25],
 ]
 for (const [model, size, price] of imagePricing) {
   insert.run(model, size, price, 1.0)

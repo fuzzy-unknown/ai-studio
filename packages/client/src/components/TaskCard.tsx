@@ -1,5 +1,6 @@
 import type { Task } from '../types'
 import { useCallback, useState } from 'react'
+import { getModelLabel, hasFormType, isImageTaskLike } from '../modelRegistry'
 
 interface Props {
   task: Task
@@ -16,66 +17,44 @@ const STATUS_MAP: Record<string, { label: string, className: string }> = {
   CANCELED: { label: '已取消', className: 'status-canceled' },
 }
 
-const MODEL_LABELS: Record<string, string> = {
-  'happyhorse-1.0-t2v': '文生视频',
-  'happyhorse-1.0-i2v': '图生视频',
-  'happyhorse-1.0-r2v': '参考生视频',
-  'happyhorse-1.0-video-edit': '视频编辑',
-  'wan2.7-i2v-2026-04-25': '万相2.7 图生视频',
-  'qwen-image-2.0-pro': '文生图 Pro',
-  'qwen-image-2.0': '文生图 2.0',
-  'qwen-image-max': '文生图 Max',
-  'qwen-image-plus': '文生图 Plus',
-  'qwen-image-edit-max': '图生图 Edit Max',
-  'qwen-image-edit-plus': '图生图 Edit Plus',
-  'qwen-image-edit': '图生图 Edit',
-}
-
 function isImageTask(task: Task): boolean {
-  return task.type === 'image' || !!task.model?.startsWith('qwen-image')
+  return isImageTaskLike(task)
 }
 
 function isImageEditModel(model: string | null): boolean {
-  return !!model?.startsWith('qwen-image-edit')
+  return hasFormType(model, 'i2i')
 }
 
 function isI2v(model: string | null): boolean {
-  return model === 'happyhorse-1.0-i2v'
-}
-
-function isR2v(model: string | null): boolean {
-  return model === 'happyhorse-1.0-r2v'
+  return hasFormType(model, 'i2v')
 }
 
 function isVideoEdit(model: string | null): boolean {
-  return model === 'happyhorse-1.0-video-edit'
+  return hasFormType(model, 'edit')
 }
 
 function isWan27I2v(model: string | null): boolean {
-  return model === 'wan2.7-i2v-2026-04-25'
+  return hasFormType(model, 'wan27-i2v')
 }
 
-function getRefImages(task: Task): string[] {
+interface TaskMediaInput {
+  type?: string
+  url: string
+}
+
+function getTaskMediaInputs(task: Task): TaskMediaInput[] {
   if (!task.inputImageUrl)
     return []
-  try {
-    const parsed = JSON.parse(task.inputImageUrl)
-    if (Array.isArray(parsed)) {
-      if (isWan27I2v(task.model))
-        return parsed.filter((url: string) => !isAudioUrl(url))
-      return parsed
-    }
-  }
-  catch {}
-  return [task.inputImageUrl]
+  const parsed = JSON.parse(task.inputImageUrl) as TaskMediaInput[]
+  return parsed.filter(item => item.url)
 }
 
-function isAudioUrl(url: string): boolean {
-  return url.startsWith('data:audio') || url.endsWith('.mp3') || url.endsWith('.wav')
+function isAudioInput(input: TaskMediaInput): boolean {
+  return input.type === 'driving_audio'
 }
 
-function isVideoUrl(url: string): boolean {
-  return url.startsWith('data:video') || url.endsWith('.mp4') || url.endsWith('.mov')
+function isVideoInput(input: TaskMediaInput): boolean {
+  return input.type === 'first_clip' || input.type === 'video'
 }
 
 function getVideoSrc(task: Task): string | null {
@@ -83,9 +62,12 @@ function getVideoSrc(task: Task): string | null {
     const paths = parseUrls(task.localPath)
     if (paths.length === 0)
       return null
+    const filename = paths[0].split('/').pop()
+    if (!filename)
+      return null
     if (isImageTask(task))
-      return `/api/image/files/${paths[0].split('/').pop()}`
-    return `/api/video/files/${paths[0].split('/').pop()}`
+      return `/api/image/files/${filename}`
+    return `/api/video/files/${filename}`
   }
   if (task.videoUrl) {
     const urls = parseUrls(task.videoUrl)
@@ -99,7 +81,7 @@ function TaskMeta({ task }: Props) {
 
   return (
     <div className="task-meta">
-      <span className="task-model-tag">{MODEL_LABELS[task.model || ''] || task.model}</span>
+      <span className="task-model-tag">{getModelLabel(task.model)}</span>
       <span>{task.resolution || task.size}</span>
       {!isImage && task.ratio && <span>{task.ratio}</span>}
       {!isImage && task.duration && <span>{`${task.duration}s`}</span>}
@@ -117,18 +99,18 @@ function TaskMeta({ task }: Props) {
 
 /** Unified media display — shows input video + reference images together */
 function TaskMedia({ task }: Props) {
-  const refImages = getRefImages(task)
+  const mediaInputs = getTaskMediaInputs(task).filter(input => !isAudioInput(input))
   const wan27 = isWan27I2v(task.model)
   const edit = isImageEditModel(task.model)
-  const hasVideo = (isVideoEdit(task.model) && !!task.inputVideoUrl) || (wan27 && refImages.some(url => isVideoUrl(url)))
-  const hasImages = refImages.length > 0 && (wan27 ? refImages.some(url => !isVideoUrl(url)) : true)
+  const hasVideo = (isVideoEdit(task.model) && !!task.inputVideoUrl) || (wan27 && mediaInputs.some(input => isVideoInput(input)))
+  const hasImages = mediaInputs.length > 0 && (wan27 ? mediaInputs.some(input => !isVideoInput(input)) : true)
 
   if (!hasVideo && !hasImages)
     return null
 
   const imgLabel = edit ? '输入图' : isI2v(task.model) ? '首帧' : '参考图'
-  const imagesOnly = wan27 ? refImages.filter(url => !isVideoUrl(url)) : refImages
-  const videoUrls = wan27 ? refImages.filter(url => isVideoUrl(url)) : []
+  const imagesOnly = wan27 ? mediaInputs.filter(input => !isVideoInput(input)) : mediaInputs
+  const videoInputs = wan27 ? mediaInputs.filter(input => isVideoInput(input)) : []
 
   return (
     <div className="task-media">
@@ -146,10 +128,10 @@ function TaskMedia({ task }: Props) {
           <span className="task-ref-label">输入视频</span>
         </div>
       )}
-      {videoUrls.map((url, i) => (
-        <div key={url.slice(0, 30) + i} className="task-media-item">
+      {videoInputs.map(input => (
+        <div key={input.url} className="task-media-item">
           <video
-            src={url}
+            src={input.url}
             className="task-media-video"
             muted
             autoPlay
@@ -162,15 +144,15 @@ function TaskMedia({ task }: Props) {
       ))}
       {hasImages && imagesOnly.length === 1 && !hasVideo && (
         <div className="task-media-item">
-          <img src={imagesOnly[0]} alt={imgLabel} />
-          <span className="task-ref-label">{imgLabel}</span>
+          <img src={imagesOnly[0].url} alt={imgLabel} />
+          <span className="task-ref-label">{imagesOnly[0].type === 'last_frame' ? '尾帧' : imgLabel}</span>
         </div>
       )}
-      {hasImages && (imagesOnly.length > 1 || hasVideo) && imagesOnly.map((url, i) => (
-        <div key={url.slice(0, 30) + i} className="task-media-item">
-          <img src={url} alt={`${imgLabel} ${i + 1}`} />
+      {hasImages && (imagesOnly.length > 1 || hasVideo) && imagesOnly.map((input, i) => (
+        <div key={input.url} className="task-media-item">
+          <img src={input.url} alt={`${imgLabel} ${i + 1}`} />
           <span className="task-ref-label">
-            {wan27 ? (i === 0 ? '首帧' : '尾帧') : `${imgLabel} ${i + 1}`}
+            {wan27 ? (input.type === 'last_frame' ? '尾帧' : '首帧') : `${imgLabel} ${i + 1}`}
           </span>
         </div>
       ))}
@@ -218,17 +200,10 @@ function LoadingCard({ task, onRefresh }: Props) {
   )
 }
 
-/** 解析可能为 JSON 数组的 videoUrl/localPath */
 function parseUrls(value: string | null): string[] {
   if (!value)
     return []
-  try {
-    const parsed = JSON.parse(value)
-    if (Array.isArray(parsed))
-      return parsed
-  }
-  catch {}
-  return [value]
+  return JSON.parse(value) as string[]
 }
 
 /** 将 localPath/videoUrl JSON 数组解析为文件服务 URL 列表 */
@@ -236,8 +211,12 @@ function resolveImageUrls(task: Task): string[] {
   // 优先 localPath → 转为文件服务 URL
   if (task.localPath) {
     const paths = parseUrls(task.localPath)
-    if (paths.length > 0)
-      return paths.map(p => `/api/image/files/${p.split('/').pop()}`)
+    if (paths.length > 0) {
+      return paths
+        .map(p => p.split('/').pop())
+        .filter((filename): filename is string => !!filename)
+        .map(filename => `/api/image/files/${filename}`)
+    }
   }
   // 降级到 videoUrl（远程 URL）
   if (task.videoUrl)
@@ -250,19 +229,20 @@ function ImageResult({ task }: Props) {
   const urls = resolveImageUrls(task)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
-  if (urls.length === 0)
-    return null
-
   const handleDownload = useCallback((url: string) => {
+    const filename = url.split('?')[0].split('/').pop()
     const a = document.createElement('a')
     a.href = url
-    a.download = `${task.taskId}.png`
+    a.download = filename || `${task.taskId}.png`
     a.target = '_blank'
     a.rel = 'noopener noreferrer'
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
   }, [task.taskId])
+
+  if (urls.length === 0)
+    return null
 
   if (urls.length <= 1) {
     return (
@@ -291,7 +271,7 @@ function ImageResult({ task }: Props) {
     <>
       <div className="task-image-grid">
         {urls.map((url, i) => (
-          <div key={url.slice(0, 30) + i} className="task-image-wrapper">
+          <div key={url} className="task-image-wrapper">
             <img
               className="task-image"
               src={url}
@@ -314,6 +294,14 @@ function ImageResult({ task }: Props) {
 }
 
 export function TaskCard({ task, onRefresh, onRetry }: Props) {
+  const handleDelete = useCallback(async () => {
+    try {
+      await fetch(`/api/tasks/${task.taskId}`, { method: 'DELETE' })
+      onRefresh?.()
+    }
+    catch {}
+  }, [task.taskId, onRefresh])
+
   if (task.status === 'PENDING' || task.status === 'RUNNING')
     return <LoadingCard task={task} onRefresh={onRefresh} />
 
@@ -322,14 +310,6 @@ export function TaskCard({ task, onRefresh, onRetry }: Props) {
   const videoSrc = !isImage ? getVideoSrc(task) : null
 
   const isFailed = task.status === 'FAILED' || task.status === 'UNKNOWN'
-
-  const handleDelete = useCallback(async () => {
-    try {
-      await fetch(`/api/tasks/${task.taskId}`, { method: 'DELETE' })
-      onRefresh?.()
-    }
-    catch {}
-  }, [task.taskId, onRefresh])
 
   return (
     <div className="task-card">

@@ -66,6 +66,7 @@ export const MODEL_GROUPS: Record<Category, ModelSubType[]> = {
         { value: 'qwen-image-2.0', label: 'Qwen-Image 2.0（加速版）', formType: 't2i' },
         { value: 'qwen-image-max', label: 'Qwen-Image Max', formType: 't2i' },
         { value: 'qwen-image-plus', label: 'Qwen-Image Plus', formType: 't2i' },
+        { value: 'qwen-image', label: 'Qwen-Image', formType: 't2i' },
       ],
     },
     {
@@ -100,6 +101,21 @@ export const IMAGE_SIZES_LEGACY = [
   { value: '1328*1328', label: '1328×1328（1:1）' },
   { value: '1104*1472', label: '1104×1472（3:4）' },
   { value: '928*1664', label: '928×1664（9:16）' },
+]
+
+/** Edit Max/Plus 系列支持宽高均在 512-2048 内的自定义分辨率 */
+export const IMAGE_EDIT_SIZES = [
+  { value: '1024*1024', label: '1024×1024（1:1）' },
+  { value: '1536*1536', label: '1536×1536（1:1）' },
+  { value: '768*1152', label: '768×1152（2:3）' },
+  { value: '1024*1536', label: '1024×1536（2:3）' },
+  { value: '1152*768', label: '1152×768（3:2）' },
+  { value: '1536*1024', label: '1536×1024（3:2）' },
+  { value: '960*1280', label: '960×1280（3:4）' },
+  { value: '1280*960', label: '1280×960（4:3）' },
+  { value: '1080*1920', label: '1080×1920（9:16）' },
+  { value: '1920*1080', label: '1920×1080（16:9）' },
+  { value: '2048*872', label: '2048×872（21:9）' },
 ]
 
 export const RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '4:5', '5:4', '9:21', '21:9'] as const

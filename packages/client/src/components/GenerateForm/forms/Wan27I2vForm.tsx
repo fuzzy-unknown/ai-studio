@@ -1,11 +1,11 @@
-import { useCallback, useRef, useState } from 'react'
-import { RESOLUTIONS, WAN27_DURATIONS } from '../constants'
+import type { PromptEditorHandle } from '../shared/PromptEditor'
 import type { GenerateFormData, ModelFormProps } from '../types'
+import { useCallback, useRef, useState } from 'react'
+import { fileToBase64 } from '../../../utils/fileToBase64'
+import { RESOLUTIONS, WAN27_DURATIONS } from '../constants'
 import { AdvancedOptions } from '../shared/AdvancedOptions'
 import { PromptEditor } from '../shared/PromptEditor'
-import type { PromptEditorHandle } from '../shared/PromptEditor'
 import { SingleImageInput } from '../shared/SingleImageInput'
-import { fileToBase64 } from '../../../utils/fileToBase64'
 
 type SubTaskMode = 'first_frame' | 'first_last_frame' | 'video_continuation'
 

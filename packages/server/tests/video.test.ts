@@ -215,8 +215,20 @@ describe('POST /api/video/generate — duration 边界值', () => {
   })
 
   it('duration 边界值 2 验证通过（万相2.7 支持）', async () => {
-    const res = await app.handle(postRequest({ prompt: 'test', duration: 2 }))
+    const res = await app.handle(postRequest({
+      prompt: 'test',
+      model: 'wan2.7-i2v-2026-04-25',
+      imageUrl: 'https://example.com/first.png',
+      duration: 2,
+    }))
     expect(res.status).not.toBe(400)
+  })
+
+  it('HappyHorse duration 为 2 时返回 400', async () => {
+    const res = await app.handle(postRequest({ prompt: 'test', model: 'happyhorse-1.0-t2v', duration: 2 }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain('3-15')
   })
 
   it('duration 小于最小值时返回 400', async () => {
@@ -227,6 +239,79 @@ describe('POST /api/video/generate — duration 边界值', () => {
   it('duration 大于最大值时返回 400', async () => {
     const res = await app.handle(postRequest({ prompt: 'test', duration: 16 }))
     expect(res.status).toBe(400)
+  })
+})
+
+describe('POST /api/video/generate — 官方文档模型差异', () => {
+  const app = createTestApp()
+
+  it('i2v 不支持 ratio 参数', async () => {
+    const res = await app.handle(postRequest({
+      prompt: 'test',
+      model: 'happyhorse-1.0-i2v',
+      imageUrl: 'https://example.com/first.png',
+      ratio: '16:9',
+    }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain('ratio')
+  })
+
+  it('video-edit 不支持 duration 参数', async () => {
+    const res = await app.handle(postRequest({
+      prompt: 'test',
+      model: 'happyhorse-1.0-video-edit',
+      videoUrl: 'https://example.com/video.mp4',
+      duration: 5,
+    }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain('duration')
+  })
+
+  it('非 video-edit 模型不支持 audioSetting', async () => {
+    const res = await app.handle(postRequest({
+      prompt: 'test',
+      model: 'happyhorse-1.0-t2v',
+      audioSetting: 'origin',
+    }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain('audioSetting')
+  })
+
+  it('万相2.7 不允许 first_frame 与 first_clip 同时传入', async () => {
+    const res = await app.handle(postRequest({
+      prompt: 'test',
+      model: 'wan2.7-i2v-2026-04-25',
+      imageUrl: 'https://example.com/first.png',
+      firstClipUrl: 'https://example.com/clip.mp4',
+    }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain('first_frame')
+  })
+
+  it('万相2.7 不允许 first_clip 搭配 driving_audio', async () => {
+    const res = await app.handle(postRequest({
+      prompt: 'test',
+      model: 'wan2.7-i2v-2026-04-25',
+      firstClipUrl: 'https://example.com/clip.mp4',
+      drivingAudioUrl: 'https://example.com/audio.mp3',
+    }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain('driving_audio')
+  })
+
+  it('万相2.7 允许 first_clip + last_frame 续写组合', async () => {
+    const res = await app.handle(postRequest({
+      prompt: 'test',
+      model: 'wan2.7-i2v-2026-04-25',
+      firstClipUrl: 'https://example.com/clip.mp4',
+      lastFrameUrl: 'https://example.com/last.png',
+    }))
+    expect(res.status).not.toBe(400)
   })
 })
 

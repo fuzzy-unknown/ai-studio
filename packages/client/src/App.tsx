@@ -1,11 +1,29 @@
-import type { Task, UsageStats } from './types'
 import type { GenerateFormData } from './components/GenerateForm/types'
+import type { Task, UsageStats } from './types'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GenerateForm } from './components/GenerateForm'
 import { TaskList } from './components/TaskList'
 import { useTaskWatcher } from './hooks/useTaskWatcher'
+import { getGenerateEndpoint, getTaskCategory, isImageTaskLike } from './modelRegistry'
 
 const IN_PROGRESS = new Set(['PENDING', 'RUNNING'])
+const PAGE_SIZE = 50
+
+function buildInputMediaPreview(data: GenerateFormData): string | null {
+  const category = getTaskCategory({ model: data.model })
+  const media = [
+    data.imageUrl ? { type: 'first_frame', url: data.imageUrl } : null,
+    data.lastFrameUrl ? { type: 'last_frame', url: data.lastFrameUrl } : null,
+    data.drivingAudioUrl ? { type: 'driving_audio', url: data.drivingAudioUrl } : null,
+    data.firstClipUrl ? { type: 'first_clip', url: data.firstClipUrl } : null,
+    ...(data.imageUrls ?? []).map(url => ({
+      type: category === 'image' ? 'input_image' : 'reference_image',
+      url,
+    })),
+  ].filter(Boolean)
+
+  return media.length > 0 ? JSON.stringify(media) : null
+}
 
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -13,15 +31,41 @@ export default function App() {
   const [stats, setStats] = useState<UsageStats | null>(null)
   const [taskFilter, setTaskFilter] = useState<'all' | 'video' | 'image'>('all')
   const [retryData, setRetryData] = useState<Partial<GenerateFormData> | null>(null)
+  const [hasMoreTasks, setHasMoreTasks] = useState(false)
+
+  const tasksEndpoint = useCallback((offset: number) => {
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String(offset),
+    })
+    if (taskFilter !== 'all')
+      params.set('type', taskFilter)
+    return `/api/tasks?${params.toString()}`
+  }, [taskFilter])
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch('/api/tasks')
-      if (res.ok)
-        setTasks(await res.json() as Task[])
+      const res = await fetch(tasksEndpoint(0))
+      if (res.ok) {
+        const rows = await res.json() as Task[]
+        setTasks(rows)
+        setHasMoreTasks(rows.length === PAGE_SIZE)
+      }
     }
     catch {}
-  }, [])
+  }, [tasksEndpoint])
+
+  const loadMoreTasks = useCallback(async () => {
+    try {
+      const res = await fetch(tasksEndpoint(tasks.length))
+      if (res.ok) {
+        const rows = await res.json() as Task[]
+        setTasks(prev => [...prev, ...rows])
+        setHasMoreTasks(rows.length === PAGE_SIZE)
+      }
+    }
+    catch {}
+  }, [tasks.length, tasksEndpoint])
 
   const fetchStats = useCallback(async () => {
     try {
@@ -30,6 +74,11 @@ export default function App() {
     }
     catch {}
   }, [])
+
+  const refreshTasksAndStats = useCallback(() => {
+    fetchTasks()
+    fetchStats()
+  }, [fetchTasks, fetchStats])
 
   useEffect(() => {
     fetchTasks()
@@ -48,17 +97,6 @@ export default function App() {
     [tasks],
   )
 
-  // 按 tab 筛选任务
-  const filteredTasks = useMemo(() => {
-    if (taskFilter === 'all')
-      return tasks
-    return tasks.filter(t =>
-      taskFilter === 'image'
-        ? t.type === 'image'
-        : t.type !== 'image',
-    )
-  }, [tasks, taskFilter])
-
   useTaskWatcher(watchingIds, useCallback((taskId: string, event: any) => {
     setTasks(prev => prev.map(t =>
       t.taskId === taskId
@@ -76,11 +114,11 @@ export default function App() {
 
     // 立即在列表顶部插入一个临时任务卡片，给用户即时反馈
     const optimisticId = `temp-${Date.now()}`
-    const isImageModel = data.model.startsWith('qwen-image')
-    setTasks(prev => [{
+    const category = getTaskCategory({ model: data.model })
+    const optimisticTask = {
       id: -1,
       taskId: optimisticId,
-      type: isImageModel ? 'image' : 'video',
+      type: category,
       model: data.model,
       prompt: data.prompt,
       status: 'PENDING',
@@ -88,7 +126,7 @@ export default function App() {
       ratio: data.ratio || null,
       duration: data.duration || null,
       inputVideoUrl: data.videoUrl || null,
-      inputImageUrl: data.imageUrl || (data.imageUrls ? JSON.stringify(data.imageUrls) : null),
+      inputImageUrl: buildInputMediaPreview(data),
       videoUrl: null,
       localPath: null,
       usage: null,
@@ -101,10 +139,13 @@ export default function App() {
       n: data.n || null,
       promptExtend: data.promptExtend ? 1 : 0,
       requestId: null,
-    } as Task, ...prev])
+    } as Task
+
+    if (taskFilter === 'all' || taskFilter === category)
+      setTasks(prev => [optimisticTask, ...prev])
 
     try {
-      const endpoint = isImageModel ? '/api/image/generate' : '/api/video/generate'
+      const endpoint = getGenerateEndpoint(data.model)
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -142,10 +183,19 @@ export default function App() {
               个任务
               {stats.totalDuration > 0 && (
                 <>
-                  {' '}·{' '}{stats.totalDuration}s
+                  {' '}
+                  ·
+                  {' '}
+                  {stats.totalDuration}
+                  s
                 </>
               )}
-              {' '}·{' '}{stats.totalCost} 元
+              {' '}
+              ·
+              {' '}
+              {stats.totalCost}
+              {' '}
+              元
             </span>
           )}
         </div>
@@ -175,20 +225,26 @@ export default function App() {
               ))}
             </div>
           </div>
-          <TaskList tasks={filteredTasks} onRefresh={() => { fetchTasks(); fetchStats() }} onRetry={(task) => {
-            const isImage = task.type === 'image' || task.model?.startsWith('qwen-image')
-            setRetryData({
-              model: task.model || undefined,
-              prompt: task.prompt,
-              resolution: task.resolution || (isImage ? task.size : undefined) || '',
-              size: isImage ? (task.size ?? undefined) : undefined,
-              ratio: task.ratio || undefined,
-              duration: task.duration || undefined,
-              negativePrompt: task.negativePrompt || undefined,
-            })
-            // 切换到对应的 category tab
-            setTaskFilter(isImage ? 'image' : 'video')
-          }} />
+          <TaskList
+            tasks={tasks}
+            hasMore={hasMoreTasks}
+            onLoadMore={loadMoreTasks}
+            onRefresh={refreshTasksAndStats}
+            onRetry={(task) => {
+              const isImage = isImageTaskLike(task)
+              setRetryData({
+                model: task.model || undefined,
+                prompt: task.prompt,
+                resolution: task.resolution || (isImage ? task.size : undefined) || '',
+                size: isImage ? (task.size ?? undefined) : undefined,
+                ratio: task.ratio || undefined,
+                duration: task.duration || undefined,
+                negativePrompt: task.negativePrompt || undefined,
+              })
+              // 切换到对应的 category tab
+              setTaskFilter(isImage ? 'image' : 'video')
+            }}
+          />
         </section>
       </div>
     </div>

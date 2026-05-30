@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { Elysia } from 'elysia'
+import { Elysia, t } from 'elysia'
 import { logger } from '../../utils/logger'
 import { getModel, isQwenImageModel } from '../task/model-registry'
+import { resolveTaskMediaUrl } from '../task/shared'
+import { createSSEStream } from '../task/sse'
 import {
   ImageGenerateBody,
   ImageGenerateResponse,
@@ -29,29 +31,26 @@ export const imageModule = new Elysia({ prefix: '/api/image', name: 'module:imag
     return { task_id: result.taskId, status: result.status }
   }, {
     body: 'imageGenerateBody',
-    response: { 200: 'imageGenerateResponse' },
-    beforeHandle: ({ body, set }) => {
+    response: { 200: 'imageGenerateResponse', 400: t.Object({ error: t.String() }) },
+    beforeHandle: ({ body, status }) => {
       const b = body as any
       const model = b.model || 'qwen-image-2.0-pro'
 
       if (!isQwenImageModel(model)) {
-        set.status = 400
-        return { error: `Invalid model: ${model}. Must be a qwen-image model.` }
+        return status(400, { error: `Invalid model: ${model}. Must be a qwen-image model.` })
       }
 
       const modelDef = getModel(model)
       if (modelDef) {
         const err = modelDef.validate(b)
         if (err) {
-          set.status = 400
-          return { error: err }
+          return status(400, { error: err })
         }
       }
       else {
         // 未在注册表中的 qwen-image 变体（如日期快照），只做基础校验
         if (b.imageUrls && b.imageUrls.length > 3) {
-          set.status = 400
-          return { error: 'imageUrls must contain 1-3 images' }
+          return status(400, { error: 'imageUrls must contain 1-3 images' })
         }
       }
     },
@@ -71,56 +70,9 @@ export const imageModule = new Elysia({ prefix: '/api/image', name: 'module:imag
     return task
   })
   .get('/tasks/:taskId/events', ({ params: { taskId } }) => {
-    logger.info({ taskId }, '[SSE-Image] Client connected')
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder()
-        const send = (data: any) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        }
-
-        let lastStatus = ''
-        let ticks = 0
-
-        while (ticks < 300) {
-          ticks++
-          const task = await ImageService.getTaskByTaskId(taskId)
-
-          if (!task) {
-            send({ status: 'ERROR', error: 'Task not found' })
-            break
-          }
-
-          if (task.status !== lastStatus) {
-            lastStatus = task.status
-            send({
-              status: task.status,
-              // videoUrl/localPath 统一为 JSON 数组，直接传递
-              video_url: task.localPath || task.videoUrl || null,
-              error: task.errorMessage || null,
-            })
-          }
-
-          if (ImageService.isTerminal(task.status))
-            break
-
-          await Bun.sleep(2000)
-        }
-
-        send({ status: 'DONE' })
-        logger.info({ taskId }, '[SSE-Image] Stream closed')
-        controller.close()
-      },
-    })
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
+    return createSSEStream(taskId, {
+      resolveMediaUrl: resolveTaskMediaUrl,
+      logPrefix: '[SSE-Image]',
     })
   })
   .get('/files/:filename', async ({ params: { filename }, set }) => {

@@ -1,16 +1,20 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { IMAGE_SIZES_V2 } from '../constants'
-import type { GenerateFormData, ModelFormProps } from '../types'
-import { PromptEditor } from '../shared/PromptEditor'
 import type { PromptEditorHandle } from '../shared/PromptEditor'
-import { MultiImageInput } from '../shared/MultiImageInput'
+import type { GenerateFormData, ModelFormProps } from '../types'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { fileToBase64 } from '../../../utils/fileToBase64'
+import { IMAGE_EDIT_SIZES, IMAGE_SIZES_V2 } from '../constants'
+import { MultiImageInput } from '../shared/MultiImageInput'
+import { PromptEditor } from '../shared/PromptEditor'
 
 const MAX_IMAGES = 3
 
 /** qwen-image-edit 不支持 size / n / prompt_extend */
 function isLimitedModel(model: string): boolean {
   return model === 'qwen-image-edit'
+}
+
+function isEditSeriesModel(model: string): boolean {
+  return model === 'qwen-image-edit-max' || model === 'qwen-image-edit-plus'
 }
 
 export function QwenImageEditForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
@@ -28,6 +32,7 @@ export function QwenImageEditForm({ model, loading, onSubmit, initialData }: Mod
   const editorRef = useRef<PromptEditorHandle>(null)
 
   const limited = useMemo(() => isLimitedModel(model), [model])
+  const sizes = useMemo(() => isEditSeriesModel(model) ? IMAGE_EDIT_SIZES : IMAGE_SIZES_V2, [model])
 
   const canSubmit = prompt.trim() && !loading && imageUrls.length > 0
 
@@ -132,7 +137,7 @@ export function QwenImageEditForm({ model, loading, onSubmit, initialData }: Mod
             <label>
               分辨率
               <select value={size} onChange={e => setSize(e.target.value)} disabled={loading}>
-                {IMAGE_SIZES_V2.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                {sizes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </label>
             <label>

@@ -1,10 +1,10 @@
 import { cors } from '@elysiajs/cors'
 import { Elysia } from 'elysia'
-import { errorPlugin } from './plugins/error'
 import { imageModule } from './modules/image'
 import { pricingModule } from './modules/pricing'
 import { taskModule } from './modules/task'
 import { videoModule } from './modules/video'
+import { errorPlugin } from './plugins/error'
 import { logger } from './utils/logger'
 
 const app = new Elysia()

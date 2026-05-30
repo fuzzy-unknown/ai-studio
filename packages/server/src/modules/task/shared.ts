@@ -1,33 +1,49 @@
+import type { Task } from '../../db/schema'
 /**
  * 共享任务工具函数 — 供 video 和 image 模块复用
  */
 import { existsSync } from 'node:fs'
 import { unlink } from 'node:fs/promises'
-import process from 'node:process'
 import { resolve } from 'node:path'
+import process from 'node:process'
 import { desc, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tasks } from '../../db/schema'
-import type { Task } from '../../db/schema'
 import { logger } from '../../utils/logger'
+import { isQwenImageModel } from './model-registry'
 
 export const TERMINAL_STATES = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
 
-/**
- * 解析 videoUrl/localPath — 统一 JSON 数组格式后的读取工具
- * 返回 string[] （空数组表示无数据）
- */
 export function parseMediaUrls(value: string | null): string[] {
   if (!value)
     return []
-  try {
-    const parsed = JSON.parse(value)
-    if (Array.isArray(parsed))
-      return parsed
+  return JSON.parse(value) as string[]
+}
+
+export function isImageTask(task: Pick<Task, 'type' | 'model'>): boolean {
+  if (task.type === 'image')
+    return true
+  if (task.type === 'video')
+    return false
+  return task.model ? isQwenImageModel(task.model) : false
+}
+
+export function resolveTaskMediaUrl(task: Task): string | null {
+  const localUrls = parseMediaUrls(task.localPath)
+  const image = isImageTask(task)
+  const prefix = image ? '/api/image/files/' : '/api/video/files/'
+
+  if (localUrls.length > 0) {
+    const urls = localUrls
+      .map(path => path.split('/').pop())
+      .filter((filename): filename is string => !!filename)
+      .map(filename => `${prefix}${filename}`)
+    if (urls.length === 0)
+      return null
+    return urls.length === 1 ? urls[0] : JSON.stringify(urls)
   }
-  catch {}
-  // 兼容迁移前可能的裸字符串（理论上迁移后不应出现）
-  return [value]
+
+  return task.videoUrl || null
 }
 
 export function getApiKey(): string {
@@ -41,8 +57,13 @@ export function isTerminal(status: string): boolean {
   return TERMINAL_STATES.has(status)
 }
 
-export async function getAllTasks(): Promise<Task[]> {
-  return db.select().from(tasks).orderBy(desc(tasks.createdAt)).all()
+export async function getAllTasks(options: { limit?: number, offset?: number, type?: 'video' | 'image' } = {}): Promise<Task[]> {
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 200)
+  const offset = Math.max(options.offset ?? 0, 0)
+  const query = db.select().from(tasks).orderBy(desc(tasks.createdAt)).limit(limit).offset(offset)
+  if (options.type)
+    return query.where(eq(tasks.type, options.type)).all()
+  return query.all()
 }
 
 export async function getTaskByTaskId(taskId: string): Promise<Task | undefined> {
@@ -55,17 +76,20 @@ export async function deleteTask(taskId: string): Promise<boolean> {
     return false
 
   // 删除本地文件
-  const isImage = task.model?.startsWith('qwen-image')
-  const storageDir = isImage ? 'storage/images' : 'storage/videos'
-  const ext = isImage ? '.png' : '.mp4'
-  const filePath = resolve(import.meta.dir, `../../../${storageDir}`, `${taskId}${ext}`)
-  if (existsSync(filePath)) {
-    try {
-      await unlink(filePath)
-      logger.info({ taskId, filePath }, '[Task] Deleted local file')
-    }
-    catch (err) {
-      logger.warn({ taskId, error: (err as Error).message }, '[Task] Failed to delete local file')
+  const localPaths = parseMediaUrls(task.localPath)
+  const pathsToDelete = localPaths.length > 0
+    ? localPaths.map(path => resolve(import.meta.dir, '../../../', path))
+    : [resolve(import.meta.dir, '../../../storage/videos', `${taskId}.mp4`)]
+
+  for (const filePath of pathsToDelete) {
+    if (existsSync(filePath)) {
+      try {
+        await unlink(filePath)
+        logger.info({ taskId, filePath }, '[Task] Deleted local file')
+      }
+      catch (err) {
+        logger.warn({ taskId, filePath, error: (err as Error).message }, '[Task] Failed to delete local file')
+      }
     }
   }
 

@@ -60,7 +60,7 @@ export function MultiImageInput({
       {imageUrls.length > 0 && (
         <div className="r2v-images">
           {imageUrls.map((url, i) => (
-            <div key={url.slice(0, 30) + i} className="r2v-thumb">
+            <div key={url} className="r2v-thumb">
               <img src={url} alt={`参考图 ${i + 1}`} />
               <span className="r2v-thumb-index">
                 {i + 1}

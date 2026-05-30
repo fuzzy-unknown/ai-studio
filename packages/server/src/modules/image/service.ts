@@ -2,12 +2,12 @@ import type { Task } from '../../db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tasks } from '../../db/schema'
+import { logger } from '../../utils/logger'
+import { downloadImage } from '../../utils/storage'
 import { calculateImageCost } from '../pricing/service'
 import { translateError } from '../task/errors'
 import { isEditModel as isImageEditModel, isSyncImageModel } from '../task/model-registry'
-import { getAllTasks as sharedGetAllTasks, getApiKey, getTaskByTaskId as sharedGetTaskByTaskId, getUsageStats as sharedGetUsageStats, isTerminal, TERMINAL_STATES } from '../task/shared'
-import { logger } from '../../utils/logger'
-import { downloadImage } from '../../utils/storage'
+import { getApiKey, isTerminal, getAllTasks as sharedGetAllTasks, getTaskByTaskId as sharedGetTaskByTaskId, getUsageStats as sharedGetUsageStats, TERMINAL_STATES } from '../task/shared'
 
 const BASE_URL = 'https://dashscope.aliyuncs.com/api/v1'
 
@@ -22,6 +22,12 @@ interface CreateImageTaskParams {
   seed?: number
   // 图像编辑：输入图片 URL（1-3 张）
   imageUrls?: string[]
+}
+
+function serializeInputImages(imageUrls: string[] | undefined): string | null {
+  if (!imageUrls || imageUrls.length === 0)
+    return null
+  return JSON.stringify(imageUrls.map(url => ({ type: 'input_image', url })))
 }
 
 // ---- DashScope sync call (qwen-image-2.0 series) ----
@@ -57,7 +63,7 @@ async function callDashScopeSync(params: CreateImageTaskParams): Promise<{
     parameters: {} as any,
   }
 
-  if (params.size)
+  if (params.size && model !== 'qwen-image-edit')
     body.parameters.size = params.size
   if (params.negativePrompt)
     body.parameters.negative_prompt = params.negativePrompt
@@ -246,9 +252,7 @@ export abstract class ImageService {
         resolution: params.size || null,
         videoUrl,
         localPath,
-        inputImageUrl: params.imageUrls && params.imageUrls.length > 0
-          ? (params.imageUrls.length === 1 ? params.imageUrls[0] : JSON.stringify(params.imageUrls))
-          : null,
+        inputImageUrl: serializeInputImages(params.imageUrls),
         size: params.size || null,
         negativePrompt: params.negativePrompt || null,
         n: result.imageCount,

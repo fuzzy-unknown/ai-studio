@@ -1,15 +1,16 @@
+import type { PromptEditorHandle } from '../shared/PromptEditor'
+import type { GenerateFormData, ModelFormProps } from '../types'
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { isV2ImageModel } from '../../../modelRegistry'
 import {
   IMAGE_SIZES_LEGACY,
   IMAGE_SIZES_V2,
 } from '../constants'
-import type { GenerateFormData, ModelFormProps } from '../types'
 import { PromptEditor } from '../shared/PromptEditor'
-import type { PromptEditorHandle } from '../shared/PromptEditor'
 
 /** 判断是否为 2.0 系列模型 */
 function isV2Model(model: string): boolean {
-  return model.startsWith('qwen-image-2.0')
+  return isV2ImageModel(model)
 }
 
 export function QwenImageForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
@@ -29,18 +30,6 @@ export function QwenImageForm({ model, loading, onSubmit, initialData }: ModelFo
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const editorRef = useRef<PromptEditorHandle>(null)
-
-  // 模型切换时重置 size 和 n — 首次挂载有 initialData 时跳过，保留回填值
-  const hasInitialDataRef = useRef(!!initialData)
-  useMemo(() => {
-    if (hasInitialDataRef.current) {
-      hasInitialDataRef.current = false
-      return
-    }
-    setSize(isV2Model(model) ? '2048*2048' : '1664*928')
-    if (!isV2Model(model))
-      setN(1)
-  }, [model])
 
   const canSubmit = prompt.trim() && !loading
 

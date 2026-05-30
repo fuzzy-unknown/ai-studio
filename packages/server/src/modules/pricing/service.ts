@@ -1,5 +1,5 @@
 import type { Pricing } from '../../db/schema'
-import { eq, and } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { pricing } from '../../db/schema'
 import { logger } from '../../utils/logger'
@@ -115,7 +115,7 @@ export abstract class PricingService {
       .where(eq(pricing.id, id))
 
     logger.info({ id }, '[Pricing] Updated')
-    return db.select().from(pricing).where(eq(pricing.id, id)).get()
+    return await db.select().from(pricing).where(eq(pricing.id, id)).get() ?? null
   }
 
   /** 按 ID 删除 */

@@ -1,9 +1,9 @@
+import type { PromptEditorHandle } from '../shared/PromptEditor'
+import type { GenerateFormData, ModelFormProps } from '../types'
 import { useCallback, useRef, useState } from 'react'
 import { DURATIONS, RATIOS, RESOLUTIONS } from '../constants'
-import type { GenerateFormData, ModelFormProps } from '../types'
 import { AdvancedOptions } from '../shared/AdvancedOptions'
 import { PromptEditor } from '../shared/PromptEditor'
-import type { PromptEditorHandle } from '../shared/PromptEditor'
 
 export function HappyHorseT2vForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
   const [prompt, setPrompt] = useState(initialData?.prompt ?? '')

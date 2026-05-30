@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { CATEGORIES, MODEL_GROUPS } from './constants'
+/* eslint-disable react/set-state-in-effect -- retryData intentionally drives form navigation and remounting */
 import type { Category } from './constants'
 import type { GenerateFormData } from './types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { CATEGORIES, MODEL_GROUPS } from './constants'
 import { HappyHorseEditForm } from './forms/HappyHorseEditForm'
 import { HappyHorseI2vForm } from './forms/HappyHorseI2vForm'
 import { HappyHorseR2vForm } from './forms/HappyHorseR2vForm'
 import { HappyHorseT2vForm } from './forms/HappyHorseT2vForm'
-import { Wan27I2vForm } from './forms/Wan27I2vForm'
 import { QwenImageEditForm } from './forms/QwenImageEditForm'
 import { QwenImageForm } from './forms/QwenImageForm'
+import { Wan27I2vForm } from './forms/Wan27I2vForm'
 
 interface Props {
   onSubmit: (data: GenerateFormData) => void

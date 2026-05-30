@@ -1,11 +1,11 @@
-import { useCallback, useRef, useState } from 'react'
-import { DURATIONS, R2V_MAX_IMAGES, RATIOS, RESOLUTIONS } from '../constants'
+import type { PromptEditorHandle } from '../shared/PromptEditor'
 import type { GenerateFormData, ModelFormProps } from '../types'
+import { useCallback, useRef, useState } from 'react'
+import { fileToBase64 } from '../../../utils/fileToBase64'
+import { DURATIONS, R2V_MAX_IMAGES, RATIOS, RESOLUTIONS } from '../constants'
 import { AdvancedOptions } from '../shared/AdvancedOptions'
 import { MultiImageInput } from '../shared/MultiImageInput'
 import { PromptEditor } from '../shared/PromptEditor'
-import type { PromptEditorHandle } from '../shared/PromptEditor'
-import { fileToBase64 } from '../../../utils/fileToBase64'
 
 export function HappyHorseR2vForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
   const [prompt, setPrompt] = useState(initialData?.prompt ?? '')

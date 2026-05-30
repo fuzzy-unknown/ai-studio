@@ -31,19 +31,17 @@ export const pricingModule = new Elysia({ prefix: '/api/pricing', name: 'module:
     response: { 200: 'pricingListResponse' },
   })
   // 按 ID 获取单个
-  .get('/:id', async ({ params: { id }, set }) => {
+  .get('/:id', async ({ params: { id }, status }) => {
     const row = await PricingService.getById(id)
-    if (!row) {
-      set.status = 404
-      return { error: 'Pricing not found' }
-    }
+    if (!row)
+      return status(404, { error: 'Pricing not found' })
     return {
       ...row,
       actualPrice: Number((row.officialPrice * row.markup).toFixed(4)),
     }
   }, {
     params: t.Object({ id: t.Number() }),
-    response: { 200: 'pricingResponse' },
+    response: { 200: 'pricingResponse', 404: t.Object({ error: t.String() }) },
   })
   // 新增/更新定价（单条 upsert）
   .post('/', async ({ body, set }) => {
@@ -70,12 +68,10 @@ export const pricingModule = new Elysia({ prefix: '/api/pricing', name: 'module:
     body: 'batchUpsertBody',
   })
   // 按 ID 更新部分字段
-  .put('/:id', async ({ params: { id }, body, set }) => {
+  .put('/:id', async ({ params: { id }, body, status }) => {
     const row = await PricingService.update(id, body as any)
-    if (!row) {
-      set.status = 404
-      return { error: 'Pricing not found' }
-    }
+    if (!row)
+      return status(404, { error: 'Pricing not found' })
     return {
       ...row,
       actualPrice: Number((row.officialPrice * row.markup).toFixed(4)),
@@ -83,7 +79,7 @@ export const pricingModule = new Elysia({ prefix: '/api/pricing', name: 'module:
   }, {
     params: t.Object({ id: t.Number() }),
     body: 'updateBody',
-    response: { 200: 'pricingResponse' },
+    response: { 200: 'pricingResponse', 404: t.Object({ error: t.String() }) },
   })
   // 按 ID 删除
   .delete('/:id', async ({ params: { id }, set }) => {

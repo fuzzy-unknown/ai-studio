@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { Elysia } from 'elysia'
+import { Elysia, t } from 'elysia'
 import { logger } from '../../utils/logger'
 import { getModel } from '../task/model-registry'
+import { resolveTaskMediaUrl } from '../task/shared'
+import { createSSEStream } from '../task/sse'
 import {
   GenerateBody,
   GenerateResponse,
@@ -31,19 +33,17 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
     return { task_id: result.taskId, status: result.status }
   }, {
     body: 'generateBody',
-    response: { 200: 'generateResponse' },
-    beforeHandle: ({ body, set }) => {
+    response: { 200: 'generateResponse', 400: t.Object({ error: t.String() }) },
+    beforeHandle: ({ body, status }) => {
       const b = body as any
       const model = b.model || 'happyhorse-1.0-t2v'
       const modelDef = getModel(model)
       if (!modelDef || modelDef.category !== 'video') {
-        set.status = 400
-        return { error: `Invalid video model: ${model}` }
+        return status(400, { error: `Invalid video model: ${model}` })
       }
       const err = modelDef.validate(b)
       if (err) {
-        set.status = 400
-        return { error: err }
+        return status(400, { error: err })
       }
     },
   })
@@ -62,55 +62,9 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
     return task
   })
   .get('/tasks/:taskId/events', ({ params: { taskId } }) => {
-    logger.info({ taskId }, '[SSE] Client connected')
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder()
-        const send = (data: any) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        }
-
-        let lastStatus = ''
-        let ticks = 0
-
-        while (ticks < 300) { // ~10 min max
-          ticks++
-          const task = await VideoService.getTaskByTaskId(taskId)
-
-          if (!task) {
-            send({ status: 'ERROR', error: 'Task not found' })
-            break
-          }
-
-          if (task.status !== lastStatus) {
-            lastStatus = task.status
-            send({
-              status: task.status,
-              video_url: task.localPath ? task.localPath : task.videoUrl || null,
-              error: task.errorMessage || null,
-            })
-          }
-
-          if (VideoService.isTerminal(task.status))
-            break
-
-          await Bun.sleep(2000)
-        }
-
-        send({ status: 'DONE' })
-        logger.info({ taskId }, '[SSE] Stream closed')
-        controller.close()
-      },
-    })
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
+    return createSSEStream(taskId, {
+      resolveMediaUrl: resolveTaskMediaUrl,
+      logPrefix: '[SSE]',
     })
   })
   // 视频文件服务：提供本地保存的视频

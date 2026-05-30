@@ -299,6 +299,26 @@
   gap: 0.75rem;
 }
 
+.load-more-btn {
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.65rem;
+  border: 1px solid #e5e5ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #666;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.load-more-btn:hover {
+  border-color: #6366f1;
+  color: #4f46e5;
+  background: #f9f9ff;
+}
+
 .empty-text {
   text-align: center;
   color: #aaa;

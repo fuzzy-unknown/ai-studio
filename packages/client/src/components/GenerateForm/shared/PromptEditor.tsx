@@ -67,8 +67,9 @@ export interface PromptEditorProps {
   showMentions: boolean
 }
 
+// eslint-disable-next-line react/no-forward-ref -- parent forms use an imperative editor handle
 export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
-  function PromptEditor(props, ref) {
+  (props, ref) => {
     const {
       value,
       imageUrls,
@@ -161,7 +162,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
           <div className="mention-dropdown">
             {imageUrls.map((url, i) => (
               <button
-                key={url.slice(0, 30) + i}
+                key={url}
                 type="button"
                 className="mention-item"
                 onClick={() => handleInsertRef(i + 1)}
