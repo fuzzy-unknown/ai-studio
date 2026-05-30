@@ -11,6 +11,8 @@ const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED', 'DONE', 
 export function useTaskWatcher(
   taskIds: string[],
   onUpdate: (taskId: string, event: TaskEvent) => void,
+  /** taskId → model 映射，用于选择 SSE 端点 */
+  taskModels?: Map<string, string>,
 ) {
   const connectionsRef = useRef<Map<string, EventSource>>(new Map())
   const onUpdateRef = useRef(onUpdate)
@@ -41,7 +43,13 @@ export function useTaskWatcher(
       if (current.has(id))
         continue
 
-      const es = new EventSource(`/api/video/tasks/${id}/events`)
+      const model = taskModels?.get(id)
+      const isImage = model?.startsWith('qwen-image')
+      const endpoint = isImage
+        ? `/api/image/tasks/${id}/events`
+        : `/api/video/tasks/${id}/events`
+
+      const es = new EventSource(endpoint)
       current.set(id, es)
 
       es.onmessage = (e) => {
@@ -58,7 +66,7 @@ export function useTaskWatcher(
         current.delete(id)
       }
     }
-  }, [taskIds])
+  }, [taskIds, taskModels])
 
   // 组件卸载时清理所有连接
   useEffect(() => {

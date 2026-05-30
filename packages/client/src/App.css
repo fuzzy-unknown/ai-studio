@@ -460,6 +460,42 @@
   margin-top: 0.5rem;
 }
 
+/* Image result display */
+.task-image-wrapper {
+  margin-top: 0.75rem;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e5ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafafa;
+}
+
+.task-image {
+  max-width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Multi-image grid */
+.task-image-grid {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.task-image-grid .task-image-wrapper {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.task-image-grid .task-image {
+  max-height: 200px;
+}
+
 /* Loading Card */
 .task-card--loading {
   border-color: #c7d2fe;

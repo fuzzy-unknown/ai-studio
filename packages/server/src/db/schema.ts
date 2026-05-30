@@ -33,6 +33,11 @@ export const tasks = sqliteTable('tasks', {
   cost: real('cost'),
   errorMessage: text('error_message'),
   requestId: text('request_id'),
+  // 图片模型专属字段
+  size: text('size'),
+  negativePrompt: text('negative_prompt'),
+  n: int('n').default(1),
+  promptExtend: int('prompt_extend').default(1),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now'))`),
 })

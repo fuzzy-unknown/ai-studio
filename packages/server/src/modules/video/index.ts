@@ -126,6 +126,7 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     })
   })

@@ -112,7 +112,7 @@ async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeC
   }
 
   const parameters: any = {
-    resolution: params.resolution || ((i2v || r2v || videoEdit) ? '1080P' : '720P'),
+    resolution: params.resolution || '1080P',
   }
   if (!i2v && !videoEdit) {
     parameters.ratio = params.ratio || '16:9'
@@ -200,7 +200,7 @@ export abstract class VideoService {
       model: params.model || 'happyhorse-1.0-t2v',
       prompt: params.prompt,
       status: result.task_status,
-      resolution: params.resolution || ((i2v || r2v || videoEdit) ? '1080P' : '720P'),
+      resolution: params.resolution || '1080P',
       ratio: i2v || videoEdit ? null : (params.ratio || '16:9'),
       duration: videoEdit ? null : (params.duration || 5),
       inputVideoUrl: videoEdit ? params.videoUrl : null,

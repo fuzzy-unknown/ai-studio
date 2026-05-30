@@ -18,6 +18,14 @@ const MODEL_LABELS: Record<string, string> = {
   'happyhorse-1.0-i2v': '图生视频',
   'happyhorse-1.0-r2v': '参考生视频',
   'happyhorse-1.0-video-edit': '视频编辑',
+  'qwen-image-2.0-pro': '文生图 Pro',
+  'qwen-image-2.0': '文生图 2.0',
+  'qwen-image-max': '文生图 Max',
+  'qwen-image-plus': '文生图 Plus',
+}
+
+function isImageModel(model: string | null): boolean {
+  return !!model?.startsWith('qwen-image')
 }
 
 function isI2v(model: string | null): boolean {
@@ -46,21 +54,28 @@ function getRefImages(task: Task): string[] {
   return [task.inputImageUrl]
 }
 
-function getVideoSrc(task: Props['task']): string | null {
-  if (task.localPath)
+function getVideoSrc(task: Task): string | null {
+  if (task.localPath) {
+    // 图片模型用 image 端点，视频模型用 video 端点
+    if (isImageModel(task.model))
+      return `/api/image/files/${task.taskId}.png`
     return `/api/video/files/${task.taskId}.mp4`
+  }
   if (task.videoUrl)
     return task.videoUrl
   return null
 }
 
 function TaskMeta({ task }: Props) {
+  const isImage = isImageModel(task.model)
+
   return (
     <div className="task-meta">
-      <span className="task-model-tag">{MODEL_LABELS[task.model || 'happyhorse-1.0-t2v'] || task.model}</span>
-      <span>{task.resolution}</span>
-      {task.ratio && <span>{task.ratio}</span>}
-      {task.duration && <span>{`${task.duration}s`}</span>}
+      <span className="task-model-tag">{MODEL_LABELS[task.model || ''] || task.model}</span>
+      <span>{task.resolution || task.size}</span>
+      {!isImage && task.ratio && <span>{task.ratio}</span>}
+      {!isImage && task.duration && <span>{`${task.duration}s`}</span>}
+      {isImage && task.n && task.n > 1 && <span>{`${task.n} 张`}</span>}
       {task.cost != null && (
         <span className="task-cost-tag">
           {task.cost.toFixed(2)}
@@ -121,6 +136,10 @@ function TaskMedia({ task }: Props) {
 
 function LoadingCard({ task }: Props) {
   const info = STATUS_MAP[task.status] || { label: task.status, className: '' }
+  const isImage = isImageModel(task.model)
+  const loadingText = task.status === 'RUNNING'
+    ? (isImage ? '图片生成中...' : '视频生成中...')
+    : '排队等待中...'
 
   return (
     <div className="task-card task-card--loading">
@@ -136,8 +155,57 @@ function LoadingCard({ task }: Props) {
         <div className="loading-bar">
           <div className={`loading-bar-fill ${task.status === 'RUNNING' ? 'running' : ''}`} />
         </div>
-        <span className="loading-text">{task.status === 'RUNNING' ? '视频生成中...' : '排队等待中...'}</span>
+        <span className="loading-text">{loadingText}</span>
       </div>
+    </div>
+  )
+}
+
+/** 解析可能为 JSON 数组的 videoUrl/localPath */
+function parseUrls(value: string | null): string[] {
+  if (!value)
+    return []
+  try {
+    const parsed = JSON.parse(value)
+    if (Array.isArray(parsed))
+      return parsed
+  }
+  catch {}
+  return [value]
+}
+
+/** 图片结果展示 */
+function ImageResult({ task }: Props) {
+  const src = getVideoSrc(task)
+  if (!src)
+    return null
+
+  // 多图场景：videoUrl 是 JSON 数组
+  const urls = parseUrls(src)
+
+  if (urls.length <= 1) {
+    return (
+      <div className="task-image-wrapper">
+        <img
+          className="task-image"
+          src={urls[0] || src}
+          alt={task.prompt}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="task-image-grid">
+      {urls.map((url, i) => (
+        <div key={url.slice(0, 30) + i} className="task-image-wrapper">
+          <img
+            className="task-image"
+            src={url}
+            alt={`${task.prompt} - ${i + 1}`}
+          />
+        </div>
+      ))}
     </div>
   )
 }
@@ -147,7 +215,8 @@ export function TaskCard({ task }: Props) {
     return <LoadingCard task={task} />
 
   const info = STATUS_MAP[task.status] || { label: task.status, className: '' }
-  const videoSrc = getVideoSrc(task)
+  const isImage = isImageModel(task.model)
+  const videoSrc = !isImage ? getVideoSrc(task) : null
 
   return (
     <div className="task-card">
@@ -158,7 +227,8 @@ export function TaskCard({ task }: Props) {
       <p className="task-prompt">{task.prompt}</p>
       <TaskMedia task={task} />
       <TaskMeta task={task} />
-      {videoSrc && (
+      {isImage && <ImageResult task={task} />}
+      {!isImage && videoSrc && (
         <div className="task-video-wrapper">
           <video
             className="task-video"

@@ -35,6 +35,23 @@ export async function calculateCost(model: string, usage: UsageData): Promise<nu
   return Number((usage.duration * pricePerSec).toFixed(4))
 }
 
+/** 计算图片任务费用（元/张） */
+export async function calculateImageCost(model: string, imageCount: number): Promise<number> {
+  // 查询第一个匹配的定价记录作为单价
+  const row = await db
+    .select()
+    .from(pricing)
+    .where(eq(pricing.model, model))
+    .get()
+
+  if (!row) {
+    logger.warn({ model }, '[Pricing] No image pricing found, using 0')
+    return 0
+  }
+
+  return Number((imageCount * row.officialPrice * row.markup).toFixed(4))
+}
+
 export abstract class PricingService {
   /** 获取所有定价配置 */
   static async getAll(): Promise<Pricing[]> {

@@ -50,6 +50,22 @@ try {
   sqlite.run('ALTER TABLE tasks ADD COLUMN cost REAL')
 }
 catch {}
+try {
+  sqlite.run('ALTER TABLE tasks ADD COLUMN size TEXT DEFAULT NULL')
+}
+catch {}
+try {
+  sqlite.run('ALTER TABLE tasks ADD COLUMN negative_prompt TEXT DEFAULT NULL')
+}
+catch {}
+try {
+  sqlite.run('ALTER TABLE tasks ADD COLUMN n INTEGER DEFAULT 1')
+}
+catch {}
+try {
+  sqlite.run('ALTER TABLE tasks ADD COLUMN prompt_extend INTEGER DEFAULT 1')
+}
+catch {}
 
 // 定价配置表
 sqlite.run(`
@@ -85,6 +101,23 @@ if (existingPricing.cnt === 0) {
   for (const model of models) {
     insert.run(model, '720P', 0.9, 1.0)
     insert.run(model, '1080P', 1.6, 1.0)
+  }
+  // 千问文生图模型定价（元/张）
+  const imageModels = [
+    'qwen-image-2.0-pro',
+    'qwen-image-2.0',
+    'qwen-image-max',
+    'qwen-image-plus',
+  ]
+  const imagePricing: Record<string, [string, number][]> = {
+    'qwen-image-2.0-pro': [['2048*2048', 0.5]],
+    'qwen-image-2.0': [['2048*2048', 0.2]],
+    'qwen-image-max': [['1664*928', 0.5]],
+    'qwen-image-plus': [['1664*928', 0.2]],
+  }
+  for (const model of imageModels) {
+    for (const [size, price] of imagePricing[model])
+      insert.run(model, size, price, 1.0)
   }
 }
 

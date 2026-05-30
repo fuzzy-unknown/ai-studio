@@ -23,6 +23,11 @@ export interface Task {
   errorMessage: string | null
   createdAt: string | null
   updatedAt: string | null
+  // 图片模型专属
+  size?: string | null
+  negativePrompt?: string | null
+  n?: number | null
+  promptExtend?: number | null
 }
 
 export interface UsageStats {

@@ -47,6 +47,11 @@ export const TaskResponse = t.Object({
   errorMessage: t.Nullable(t.String()),
   createdAt: t.Nullable(t.String()),
   updatedAt: t.Nullable(t.String()),
+  // 图片模型字段
+  size: t.Nullable(t.String()),
+  negativePrompt: t.Nullable(t.String()),
+  n: t.Nullable(t.Number()),
+  promptExtend: t.Nullable(t.Number()),
 })
 
 export const TaskListResponse = t.Array(TaskResponse)
