@@ -7,7 +7,9 @@ export interface UsageData {
 }
 
 export interface Task {
+  id?: number
   taskId: string
+  type?: string | null
   model: string | null
   prompt: string
   status: string

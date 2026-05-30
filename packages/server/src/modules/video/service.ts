@@ -1,72 +1,16 @@
 import type { Task } from '../../db/schema'
-import process from 'node:process'
-import { desc, eq, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tasks } from '../../db/schema'
 import { calculateCost as dbCalculateCost } from '../pricing/service'
 import type { UsageData } from '../pricing/service'
+import { translateError } from '../task/errors'
+import { getModelOrThrow } from '../task/model-registry'
+import { getAllTasks as sharedGetAllTasks, getApiKey, getTaskByTaskId as sharedGetTaskByTaskId, getUsageStats as sharedGetUsageStats, isTerminal, TERMINAL_STATES } from '../task/shared'
 import { logger } from '../../utils/logger'
 import { downloadVideo } from '../../utils/storage'
 
 const BASE_URL = 'https://dashscope.aliyuncs.com/api/v1'
-const TERMINAL_STATES = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
-const I2V_MODEL = 'happyhorse-1.0-i2v'
-const R2V_MODEL = 'happyhorse-1.0-r2v'
-const VIDEO_EDIT_MODEL = 'happyhorse-1.0-video-edit'
-const WAN27_I2V_MODEL = 'wan2.7-i2v-2026-04-25'
-
-const ERROR_CODE_MAP: Record<string, string> = {
-  'InvalidApiKey': 'API Key 无效，请检查 DASHSCOPE_API_KEY 配置',
-  'Arrearage': '阿里云账号欠费，请前往费用中心充值',
-  'ModelNotFound': '模型不存在，请检查模型名称',
-  'AccessDenied': '无权访问该模型，请检查权限或开通百炼服务',
-  'AccessDenied.Unpurchased': '未开通阿里云百炼服务',
-  'InvalidParameter': '请求参数错误，请检查输入内容',
-  'DataInspectionFailed': '内容未通过安全审核，请修改输入内容',
-  'data_inspection_failed': '内容未通过安全审核，请修改输入内容',
-  'IPInfringementSuspect': '输入内容涉嫌知识产权侵权，请修改后重试',
-  'Throttling': '请求过于频繁，请稍后重试',
-  'Throttling.RateQuota': '已超过调用频率限制，请稍后重试',
-  'Throttling.AllocationQuota': '已超过配额限制，请检查用量',
-  'Throttling.BurstRate': '请求频率增长过快，请平滑调用',
-  'InternalError': '服务端内部错误，请稍后重试',
-  'InternalError.Algo': '算法推理失败，请稍后重试',
-  'InternalError.Timeout': '请求超时，请稍后重试',
-  'InvalidURL': '图片 URL 无效或无法访问',
-  'InvalidFile.DownloadFailed': '图片文件下载失败，请检查 URL 是否可访问',
-  'InvalidFile.Format': '文件格式不支持，请使用 JPEG/PNG/WEBP',
-  'InvalidFile.Size': '文件大小超出限制',
-  'InvalidFile.Resolution': '图片分辨率不符合要求',
-  'FlowNotPublished': '应用流程未发布',
-}
-
-function translateError(code: string, message: string): string {
-  const zh = ERROR_CODE_MAP[code]
-  return zh || `[${code}] ${message}`
-}
-
-function getApiKey(): string {
-  const key = process.env.DASHSCOPE_API_KEY
-  if (!key)
-    throw new Error('DASHSCOPE_API_KEY is not set')
-  return key
-}
-
-function isI2v(model?: string): boolean {
-  return model === I2V_MODEL
-}
-
-function isR2v(model?: string): boolean {
-  return model === R2V_MODEL
-}
-
-function isVideoEdit(model?: string): boolean {
-  return model === VIDEO_EDIT_MODEL
-}
-
-function isWan27I2v(model?: string): boolean {
-  return model === WAN27_I2V_MODEL
-}
 
 interface CreateTaskParams {
   prompt: string
@@ -105,15 +49,17 @@ interface DashScopeTaskResult {
 
 async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeCreateResult> {
   const model = params.model || 'happyhorse-1.0-t2v'
-  const i2v = isI2v(model)
-  const r2v = isR2v(model)
-  const videoEdit = isVideoEdit(model)
-  const wan27 = isWan27I2v(model)
+  const modelDef = getModelOrThrow(model)
+  const subType = modelDef.subType
+  const isWan27 = subType === 'wan27-i2v'
+  const isVideoEdit = subType === 'edit'
+  const isI2v = subType === 'i2v'
+  const isR2v = subType === 'r2v'
 
   const input: any = { prompt: params.prompt }
 
   // 万相2.7 图生视频：根据参数组装 media 数组
-  if (wan27) {
+  if (isWan27) {
     const media: { type: string, url: string }[] = []
     if (params.imageUrl)
       media.push({ type: 'first_frame', url: params.imageUrl })
@@ -128,25 +74,25 @@ async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeC
     if (params.negativePrompt)
       input.negative_prompt = params.negativePrompt
   }
-  else if (videoEdit) {
+  else if (isVideoEdit) {
     input.media = [{ type: 'video', url: params.videoUrl }]
     if (params.imageUrls?.length)
       input.media.push(...params.imageUrls.map(url => ({ type: 'reference_image', url })))
   }
-  else if (i2v && params.imageUrl) {
+  else if (isI2v && params.imageUrl) {
     input.media = [{ type: 'first_frame', url: params.imageUrl }]
   }
-  else if (r2v && params.imageUrls?.length) {
+  else if (isR2v && params.imageUrls?.length) {
     input.media = params.imageUrls.map(url => ({ type: 'reference_image', url }))
   }
 
   const parameters: any = {
     resolution: params.resolution || '1080P',
   }
-  if (!i2v && !videoEdit && !wan27) {
+  if (!isI2v && !isVideoEdit && !isWan27) {
     parameters.ratio = params.ratio || '16:9'
   }
-  if (!videoEdit) {
+  if (!isVideoEdit) {
     parameters.duration = params.duration || 5
   }
   // 所有模型都支持 watermark 和 seed
@@ -155,10 +101,10 @@ async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeC
   if (params.seed !== undefined)
     parameters.seed = params.seed
   // audio_setting 仅 video-edit 支持
-  if (videoEdit && params.audioSetting)
+  if (isVideoEdit && params.audioSetting)
     parameters.audio_setting = params.audioSetting
   // prompt_extend 仅万相2.7 支持
-  if (wan27 && params.promptExtend !== undefined)
+  if (isWan27 && params.promptExtend !== undefined)
     parameters.prompt_extend = params.promptExtend
 
   const body = { model, input, parameters }
@@ -211,36 +157,29 @@ export abstract class VideoService {
   static async createTask(params: CreateTaskParams): Promise<{ taskId: string, status: string }> {
     logger.info({ params: { ...params, imageUrl: params.imageUrl ? '[provided]' : undefined, imageUrls: params.imageUrls?.length, videoUrl: params.videoUrl ? '[provided]' : undefined } }, '[VideoService] createTask called')
 
-    const i2v = isI2v(params.model)
-    const r2v = isR2v(params.model)
-    const videoEdit = isVideoEdit(params.model)
-    const wan27 = isWan27I2v(params.model)
-    if (i2v && !params.imageUrl)
-      throw new Error('imageUrl is required for image-to-video model')
-    if (r2v && (!params.imageUrls || params.imageUrls.length === 0))
-      throw new Error('imageUrls is required for reference-to-video model')
-    if (videoEdit && !params.videoUrl)
-      throw new Error('videoUrl is required for video-edit model')
-    if (wan27 && !params.imageUrl && !params.firstClipUrl)
-      throw new Error('imageUrl or firstClipUrl is required for wan2.7-i2v model')
+    const modelDef = getModelOrThrow(params.model || 'happyhorse-1.0-t2v')
+
+    // 使用注册表的校验函数
+    const validationError = modelDef.validate(params)
+    if (validationError)
+      throw new Error(validationError)
 
     const result = await callDashScopeCreate(params)
 
-    const storedImageUrl = wan27
-      ? JSON.stringify([params.imageUrl, params.lastFrameUrl, params.drivingAudioUrl, params.firstClipUrl].filter(Boolean))
-      : r2v || videoEdit
-        ? (params.imageUrls && params.imageUrls.length > 0 ? JSON.stringify(params.imageUrls) : null)
-        : (params.imageUrl || null)
+    // 使用注册表计算 DB 字段
+    const storedImageUrl = modelDef.resolveInputImageUrl(params)
+    const defaults = modelDef.defaults
 
     await db.insert(tasks).values({
       taskId: result.task_id,
+      type: modelDef.category,
       model: params.model || 'happyhorse-1.0-t2v',
       prompt: params.prompt,
       status: result.task_status,
-      resolution: params.resolution || '1080P',
-      ratio: i2v || videoEdit ? null : (params.ratio || '16:9'),
-      duration: videoEdit ? null : (params.duration || 5),
-      inputVideoUrl: videoEdit ? params.videoUrl : null,
+      resolution: params.resolution || defaults.resolution || '1080P',
+      ratio: modelDef.hasRatio ? (params.ratio || defaults.ratio || null) : (defaults.ratio ?? null),
+      duration: modelDef.hasDuration ? (params.duration || defaults.duration || 5) : (defaults.duration ?? null),
+      inputVideoUrl: modelDef.hasInputVideo ? params.videoUrl : null,
       inputImageUrl: storedImageUrl,
       requestId: result.request_id,
     })
@@ -256,12 +195,12 @@ export abstract class VideoService {
 
   static async getAllTasks(): Promise<Task[]> {
     logger.info('[VideoService] getAllTasks')
-    return db.select().from(tasks).orderBy(desc(tasks.createdAt)).all()
+    return sharedGetAllTasks()
   }
 
   static async getTaskByTaskId(taskId: string): Promise<Task | undefined> {
     logger.info({ taskId }, '[VideoService] getTaskByTaskId')
-    return db.select().from(tasks).where(eq(tasks.taskId, taskId)).get()
+    return sharedGetTaskByTaskId(taskId)
   }
 
   static async updateTaskStatus(
@@ -310,9 +249,7 @@ export abstract class VideoService {
     }
   }
 
-  static isTerminal(status: string): boolean {
-    return TERMINAL_STATES.has(status)
-  }
+  static isTerminal = isTerminal
 
   static async pollTask(taskId: string): Promise<DashScopeTaskResult> {
     const result = await callDashScopeQuery(taskId)
@@ -321,24 +258,7 @@ export abstract class VideoService {
   }
 
   static async getUsageStats(): Promise<{ totalDuration: number, totalCost: number, taskCount: number }> {
-    const allTasks = await db.select().from(tasks).all()
-    let totalDuration = 0
-    let totalCost = 0
-    let taskCount = 0
-    for (const task of allTasks) {
-      if (task.status === 'SUCCEEDED' && task.cost != null) {
-        // 使用 DB 中已存储的 cost，与 TaskCard 显示一致
-        totalCost += task.cost
-        taskCount++
-        // duration 从 usage 中提取（图片任务没有 duration，安全跳过）
-        if (task.usage) {
-          const usage = JSON.parse(task.usage) as any
-          if (typeof usage.duration === 'number')
-            totalDuration += usage.duration
-        }
-      }
-    }
-    return { totalDuration, totalCost: Number(totalCost.toFixed(4)), taskCount }
+    return sharedGetUsageStats()
   }
 
   private static async pollUntilDone(taskId: string): Promise<void> {

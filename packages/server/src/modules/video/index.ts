@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Elysia } from 'elysia'
 import { logger } from '../../utils/logger'
+import { getModel } from '../task/model-registry'
 import {
   GenerateBody,
   GenerateResponse,
@@ -34,38 +35,15 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
     beforeHandle: ({ body, set }) => {
       const b = body as any
       const model = b.model || 'happyhorse-1.0-t2v'
-
-      const isI2v = model === 'happyhorse-1.0-i2v'
-      const isR2v = model === 'happyhorse-1.0-r2v'
-      const isVideoEdit = model === 'happyhorse-1.0-video-edit'
-      const isWan27 = model === 'wan2.7-i2v-2026-04-25'
-
-      // 各模型必填字段校验
-      if (isI2v && !b.imageUrl) {
+      const modelDef = getModel(model)
+      if (!modelDef || modelDef.category !== 'video') {
         set.status = 400
-        return { error: 'imageUrl is required for image-to-video model' }
+        return { error: `Invalid video model: ${model}` }
       }
-      if (isR2v && (!b.imageUrls || b.imageUrls.length === 0)) {
+      const err = modelDef.validate(b)
+      if (err) {
         set.status = 400
-        return { error: 'imageUrls is required for reference-to-video model' }
-      }
-      if (isVideoEdit && !b.videoUrl) {
-        set.status = 400
-        return { error: 'videoUrl is required for video-edit model' }
-      }
-      if (isWan27 && !b.imageUrl && !b.firstClipUrl) {
-        set.status = 400
-        return { error: 'imageUrl or firstClipUrl is required for wan2.7-i2v model' }
-      }
-
-      // imageUrls 数量校验
-      if (isR2v && b.imageUrls && (b.imageUrls.length < 1 || b.imageUrls.length > 9)) {
-        set.status = 400
-        return { error: 'imageUrls must contain 1-9 images for reference-to-video model' }
-      }
-      if (isVideoEdit && b.imageUrls && b.imageUrls.length > 5) {
-        set.status = 400
-        return { error: 'imageUrls must contain 0-5 images for video-edit model' }
+        return { error: err }
       }
     },
   })

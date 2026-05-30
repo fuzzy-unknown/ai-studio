@@ -19,6 +19,7 @@ export type NewPricing = typeof pricing.$inferInsert
 export const tasks = sqliteTable('tasks', {
   id: int().primaryKey({ autoIncrement: true }),
   taskId: text('task_id').notNull().unique(),
+  type: text('type').default('video'),
   model: text('model').default('happyhorse-1.0-t2v'),
   prompt: text('prompt').notNull(),
   status: text('status').notNull().default('PENDING'),

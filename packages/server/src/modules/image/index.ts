@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Elysia } from 'elysia'
 import { logger } from '../../utils/logger'
+import { getModel, isQwenImageModel } from '../task/model-registry'
 import {
   ImageGenerateBody,
   ImageGenerateResponse,
@@ -33,25 +34,25 @@ export const imageModule = new Elysia({ prefix: '/api/image', name: 'module:imag
       const b = body as any
       const model = b.model || 'qwen-image-2.0-pro'
 
-      const isQwenImage = model.startsWith('qwen-image-2.0')
-        || model.startsWith('qwen-image-max')
-        || model.startsWith('qwen-image-plus')
-        || model.startsWith('qwen-image-edit')
-        || model === 'qwen-image'
-
-      if (!isQwenImage) {
+      if (!isQwenImageModel(model)) {
         set.status = 400
         return { error: `Invalid model: ${model}. Must be a qwen-image model.` }
       }
 
-      // 编辑模型需要至少 1 张输入图片
-      if (model.startsWith('qwen-image-edit') && (!b.imageUrls || b.imageUrls.length === 0)) {
-        set.status = 400
-        return { error: 'imageUrls is required for image edit models (1-3 images)' }
+      const modelDef = getModel(model)
+      if (modelDef) {
+        const err = modelDef.validate(b)
+        if (err) {
+          set.status = 400
+          return { error: err }
+        }
       }
-      if (b.imageUrls && b.imageUrls.length > 3) {
-        set.status = 400
-        return { error: 'imageUrls must contain 1-3 images' }
+      else {
+        // 未在注册表中的 qwen-image 变体（如日期快照），只做基础校验
+        if (b.imageUrls && b.imageUrls.length > 3) {
+          set.status = 400
+          return { error: 'imageUrls must contain 1-3 images' }
+        }
       }
     },
   })

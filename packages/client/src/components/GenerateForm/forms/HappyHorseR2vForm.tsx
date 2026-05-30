@@ -5,15 +5,7 @@ import { AdvancedOptions } from '../shared/AdvancedOptions'
 import { MultiImageInput } from '../shared/MultiImageInput'
 import { PromptEditor } from '../shared/PromptEditor'
 import type { PromptEditorHandle } from '../shared/PromptEditor'
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
+import { fileToBase64 } from '../../../utils/fileToBase64'
 
 export function HappyHorseR2vForm({ model, loading, onSubmit }: ModelFormProps) {
   const [prompt, setPrompt] = useState('')

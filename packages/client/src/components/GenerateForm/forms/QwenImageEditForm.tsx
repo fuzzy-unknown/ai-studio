@@ -4,17 +4,9 @@ import type { GenerateFormData, ModelFormProps } from '../types'
 import { PromptEditor } from '../shared/PromptEditor'
 import type { PromptEditorHandle } from '../shared/PromptEditor'
 import { MultiImageInput } from '../shared/MultiImageInput'
+import { fileToBase64 } from '../../../utils/fileToBase64'
 
 const MAX_IMAGES = 3
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
 
 /** qwen-image-edit 不支持 size / n / prompt_extend */
 function isLimitedModel(model: string): boolean {
@@ -64,18 +56,29 @@ export function QwenImageEditForm({ model, loading, onSubmit }: ModelFormProps) 
   const handleSubmit = useCallback(() => {
     if (!canSubmit)
       return
-    const data: GenerateFormData = {
-      prompt: prompt.trim(),
-      model,
-      imageUrls,
-      resolution: limited ? '' : size,
-      size: limited ? undefined : size,
-      n: limited ? 1 : n,
-      negativePrompt: negativePrompt.trim() || undefined,
-      promptExtend: limited ? undefined : promptExtend,
-      watermark,
-      ...(seed !== undefined && { seed }),
-    }
+    const data: GenerateFormData = limited
+      ? {
+          prompt: prompt.trim(),
+          model,
+          imageUrls,
+          resolution: '',
+          n: 1,
+          negativePrompt: negativePrompt.trim() || undefined,
+          watermark,
+          ...(seed !== undefined && { seed }),
+        }
+      : {
+          prompt: prompt.trim(),
+          model,
+          imageUrls,
+          resolution: size,
+          size,
+          n,
+          negativePrompt: negativePrompt.trim() || undefined,
+          promptExtend,
+          watermark,
+          ...(seed !== undefined && { seed }),
+        }
     onSubmit(data)
     setPrompt('')
     setImageUrls([])

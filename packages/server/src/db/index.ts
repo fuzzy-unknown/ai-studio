@@ -66,6 +66,15 @@ try {
   sqlite.run('ALTER TABLE tasks ADD COLUMN prompt_extend INTEGER DEFAULT 1')
 }
 catch {}
+try {
+  sqlite.run('ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT \'video\'')
+}
+catch {}
+// 迁移：已有数据按 model 设置 type
+try {
+  sqlite.run('UPDATE tasks SET type = \'image\' WHERE type = \'video\' AND model LIKE \'qwen-image%\'')
+}
+catch {}
 
 // 定价配置表
 sqlite.run(`

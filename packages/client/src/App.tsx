@@ -1,4 +1,5 @@
 import type { Task, UsageStats } from './types'
+import type { GenerateFormData } from './components/GenerateForm/types'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GenerateForm } from './components/GenerateForm'
 import { TaskList } from './components/TaskList'
@@ -14,22 +15,16 @@ export default function App() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      // 使用 image 模块的统一端点获取所有任务（视频 + 图片混合展示）
-      const res = await fetch('/api/image/tasks')
-      if (res.ok) {
+      const res = await fetch('/api/tasks')
+      if (res.ok)
         setTasks(await res.json() as Task[])
-        return
-      }
-      // 降级到 video 端点
-      const fallback = await fetch('/api/video/tasks')
-      setTasks(await fallback.json() as Task[])
     }
     catch {}
   }, [])
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/video/usage/stats')
+      const res = await fetch('/api/usage/stats')
       setStats(await res.json() as UsageStats)
     }
     catch {}
@@ -58,8 +53,8 @@ export default function App() {
       return tasks
     return tasks.filter(t =>
       taskFilter === 'image'
-        ? t.model?.startsWith('qwen-image')
-        : !t.model?.startsWith('qwen-image'),
+        ? t.type === 'image'
+        : t.type !== 'image',
     )
   }, [tasks, taskFilter])
 
@@ -75,7 +70,7 @@ export default function App() {
     }
   }, [fetchTasks, fetchStats]), taskModels)
 
-  const handleGenerate = async (data: { prompt: string, model: string, imageUrl?: string, imageUrls?: string[], videoUrl?: string, resolution: string, ratio?: string, duration?: number, watermark?: boolean, audioSetting?: string, seed?: number, size?: string, negativePrompt?: string, n?: number, promptExtend?: boolean, lastFrameUrl?: string, drivingAudioUrl?: string, firstClipUrl?: string }) => {
+  const handleGenerate = async (data: GenerateFormData) => {
     setLoading(true)
 
     // 立即在列表顶部插入一个临时任务卡片，给用户即时反馈
@@ -84,6 +79,7 @@ export default function App() {
     setTasks(prev => [{
       id: -1,
       taskId: optimisticId,
+      type: isImageModel ? 'image' : 'video',
       model: data.model,
       prompt: data.prompt,
       status: 'PENDING',
@@ -97,7 +93,7 @@ export default function App() {
       usage: null,
       cost: null,
       errorMessage: null,
-      createdAt: new Date().toLocaleString(),
+      createdAt: new Date().toISOString().replace('T', ' ').split('.')[0],
       updatedAt: null,
       size: data.size || null,
       negativePrompt: data.negativePrompt || null,
@@ -142,14 +138,13 @@ export default function App() {
               {' '}
               {stats.taskCount}
               {' '}
-              个任务 ·
-              {' '}
-              {stats.totalDuration}
-              s ·
-              {' '}
-              {stats.totalCost}
-              {' '}
-              元
+              个任务
+              {stats.totalDuration > 0 && (
+                <>
+                  {' '}·{' '}{stats.totalDuration}s
+                </>
+              )}
+              {' '}·{' '}{stats.totalCost} 元
             </span>
           )}
         </div>
@@ -179,7 +174,7 @@ export default function App() {
               ))}
             </div>
           </div>
-          <TaskList tasks={filteredTasks} />
+          <TaskList tasks={filteredTasks} onRefresh={() => { fetchTasks(); fetchStats() }} />
         </section>
       </div>
     </div>

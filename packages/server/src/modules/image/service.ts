@@ -1,66 +1,15 @@
 import type { Task } from '../../db/schema'
-import process from 'node:process'
-import { desc, eq, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tasks } from '../../db/schema'
 import { calculateImageCost } from '../pricing/service'
+import { translateError } from '../task/errors'
+import { isEditModel as isImageEditModel, isSyncImageModel } from '../task/model-registry'
+import { getAllTasks as sharedGetAllTasks, getApiKey, getTaskByTaskId as sharedGetTaskByTaskId, getUsageStats as sharedGetUsageStats, isTerminal, TERMINAL_STATES } from '../task/shared'
 import { logger } from '../../utils/logger'
 import { downloadImage } from '../../utils/storage'
 
 const BASE_URL = 'https://dashscope.aliyuncs.com/api/v1'
-const TERMINAL_STATES = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
-
-const SYNC_MODELS = new Set(['qwen-image-2.0-pro', 'qwen-image-2.0'])
-const EDIT_MODELS = new Set(['qwen-image-edit-max', 'qwen-image-edit-plus', 'qwen-image-edit'])
-
-/** 判断是否为同步模型（2.0 系列 + 编辑模型，包括带日期后缀的快照版本） */
-function isSyncModel(model: string): boolean {
-  if (SYNC_MODELS.has(model) || EDIT_MODELS.has(model))
-    return true
-  // 2.0 系列的日期快照版本也是同步接口
-  if (model.startsWith('qwen-image-2.0-pro-') || model.startsWith('qwen-image-2.0-'))
-    return true
-  // 编辑模型的日期快照版本
-  if (model.startsWith('qwen-image-edit-max-') || model.startsWith('qwen-image-edit-plus-'))
-    return true
-  return false
-}
-
-/** 判断是否为编辑模型（需要输入图片） */
-function isEditModel(model: string): boolean {
-  if (EDIT_MODELS.has(model))
-    return true
-  if (model.startsWith('qwen-image-edit-max-') || model.startsWith('qwen-image-edit-plus-'))
-    return true
-  return false
-}
-
-const ERROR_CODE_MAP: Record<string, string> = {
-  'InvalidApiKey': 'API Key 无效，请检查 DASHSCOPE_API_KEY 配置',
-  'Arrearage': '阿里云账号欠费，请前往费用中心充值',
-  'ModelNotFound': '模型不存在，请检查模型名称',
-  'AccessDenied': '无权访问该模型，请检查权限或开通百炼服务',
-  'InvalidParameter': '请求参数错误，请检查输入内容',
-  'DataInspectionFailed': '内容未通过安全审核，请修改输入内容',
-  'data_inspection_failed': '内容未通过安全审核，请修改输入内容',
-  'Throttling': '请求过于频繁，请稍后重试',
-  'Throttling.RateQuota': '已超过调用频率限制，请稍后重试',
-  'Throttling.AllocationQuota': '已超过配额限制，请检查用量',
-  'InternalError': '服务端内部错误，请稍后重试',
-  'InternalError.Algo': '算法推理失败，请稍后重试',
-  'InternalError.Timeout': '请求超时，请稍后重试',
-}
-
-function translateError(code: string, message: string): string {
-  return ERROR_CODE_MAP[code] || `[${code}] ${message}`
-}
-
-function getApiKey(): string {
-  const key = process.env.DASHSCOPE_API_KEY
-  if (!key)
-    throw new Error('DASHSCOPE_API_KEY is not set')
-  return key
-}
 
 interface CreateImageTaskParams {
   prompt: string
@@ -85,7 +34,7 @@ async function callDashScopeSync(params: CreateImageTaskParams): Promise<{
   requestId: string
 }> {
   const model = params.model || 'qwen-image-2.0-pro'
-  const edit = isEditModel(model) || (params.imageUrls && params.imageUrls.length > 0)
+  const edit = isImageEditModel(model) || (params.imageUrls && params.imageUrls.length > 0)
 
   // 构建 content 数组：编辑模式先放图片再放文字
   const content: any[] = []
@@ -112,12 +61,15 @@ async function callDashScopeSync(params: CreateImageTaskParams): Promise<{
     body.parameters.size = params.size
   if (params.negativePrompt)
     body.parameters.negative_prompt = params.negativePrompt
-  if (params.n && isSyncModel(model))
+  if (params.n && isSyncImageModel(model))
     body.parameters.n = params.n
-  if (params.promptExtend !== undefined)
-    body.parameters.prompt_extend = params.promptExtend
-  else
-    body.parameters.prompt_extend = true
+  // qwen-image-edit 不支持 prompt_extend 参数
+  if (model !== 'qwen-image-edit') {
+    if (params.promptExtend !== undefined)
+      body.parameters.prompt_extend = params.promptExtend
+    else
+      body.parameters.prompt_extend = true
+  }
   if (params.watermark !== undefined)
     body.parameters.watermark = params.watermark
   if (params.seed !== undefined)
@@ -255,7 +207,7 @@ async function callDashScopeQuery(taskId: string): Promise<{
 export abstract class ImageService {
   static async createTask(params: CreateImageTaskParams): Promise<{ taskId: string, status: string }> {
     const model = params.model || 'qwen-image-2.0-pro'
-    const sync = isSyncModel(model)
+    const sync = isSyncImageModel(model)
 
     logger.info({ model, sync }, '[ImageService] createTask called')
 
@@ -291,6 +243,7 @@ export abstract class ImageService {
 
       await db.insert(tasks).values({
         taskId: localTaskId,
+        type: 'image',
         model,
         prompt: params.prompt,
         status: 'SUCCEEDED',
@@ -317,6 +270,7 @@ export abstract class ImageService {
 
       await db.insert(tasks).values({
         taskId: result.task_id,
+        type: 'image',
         model,
         prompt: params.prompt,
         status: result.task_status,
@@ -339,11 +293,11 @@ export abstract class ImageService {
   }
 
   static async getAllTasks(): Promise<Task[]> {
-    return db.select().from(tasks).orderBy(desc(tasks.createdAt)).all()
+    return sharedGetAllTasks()
   }
 
   static async getTaskByTaskId(taskId: string): Promise<Task | undefined> {
-    return db.select().from(tasks).where(eq(tasks.taskId, taskId)).get()
+    return sharedGetTaskByTaskId(taskId)
   }
 
   static async updateTaskStatus(
@@ -403,31 +357,14 @@ export abstract class ImageService {
     }
   }
 
-  static isTerminal(status: string): boolean {
-    return TERMINAL_STATES.has(status)
-  }
+  static isTerminal = isTerminal
 
   static async pollTask(taskId: string) {
     return callDashScopeQuery(taskId)
   }
 
   static async getUsageStats(): Promise<{ totalDuration: number, totalCost: number, taskCount: number }> {
-    const allTasks = await db.select().from(tasks).all()
-    let totalDuration = 0
-    let totalCost = 0
-    let taskCount = 0
-    for (const task of allTasks) {
-      if (task.status === 'SUCCEEDED' && task.cost != null) {
-        totalCost += task.cost
-        taskCount++
-        if (task.usage) {
-          const usage = JSON.parse(task.usage) as any
-          if (usage.duration)
-            totalDuration += usage.duration
-        }
-      }
-    }
-    return { totalDuration, totalCost: Number(totalCost.toFixed(4)), taskCount }
+    return sharedGetUsageStats()
   }
 
   private static async pollUntilDone(taskId: string): Promise<void> {

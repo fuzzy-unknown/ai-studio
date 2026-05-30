@@ -5,17 +5,9 @@ import { AdvancedOptions } from '../shared/AdvancedOptions'
 import { PromptEditor } from '../shared/PromptEditor'
 import type { PromptEditorHandle } from '../shared/PromptEditor'
 import { SingleImageInput } from '../shared/SingleImageInput'
+import { fileToBase64 } from '../../../utils/fileToBase64'
 
 type SubTaskMode = 'first_frame' | 'first_last_frame' | 'video_continuation'
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
 
 /** 通用 URL + 文件上传输入组件 */
 function MediaUrlInput({

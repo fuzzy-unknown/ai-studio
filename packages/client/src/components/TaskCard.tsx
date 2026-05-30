@@ -1,7 +1,9 @@
 import type { Task } from '../types'
+import { useCallback, useState } from 'react'
 
 interface Props {
   task: Task
+  onRefresh?: () => void
 }
 
 const STATUS_MAP: Record<string, { label: string, className: string }> = {
@@ -28,8 +30,8 @@ const MODEL_LABELS: Record<string, string> = {
   'qwen-image-edit': '图生图 Edit',
 }
 
-function isImageModel(model: string | null): boolean {
-  return !!model?.startsWith('qwen-image')
+function isImageTask(task: Task): boolean {
+  return task.type === 'image' || !!task.model?.startsWith('qwen-image')
 }
 
 function isImageEditModel(model: string | null): boolean {
@@ -55,11 +57,9 @@ function isWan27I2v(model: string | null): boolean {
 function getRefImages(task: Task): string[] {
   if (!task.inputImageUrl)
     return []
-  // 统一尝试 JSON 解析：多图场景存为 JSON 数组
   try {
     const parsed = JSON.parse(task.inputImageUrl)
     if (Array.isArray(parsed)) {
-      // wan2.7 过滤掉音频 URL
       if (isWan27I2v(task.model))
         return parsed.filter((url: string) => !isAudioUrl(url))
       return parsed
@@ -73,10 +73,13 @@ function isAudioUrl(url: string): boolean {
   return url.startsWith('data:audio') || url.endsWith('.mp3') || url.endsWith('.wav')
 }
 
+function isVideoUrl(url: string): boolean {
+  return url.startsWith('data:video') || url.endsWith('.mp4') || url.endsWith('.mov')
+}
+
 function getVideoSrc(task: Task): string | null {
   if (task.localPath) {
-    // 图片模型用 image 端点，视频模型用 video 端点
-    if (isImageModel(task.model))
+    if (isImageTask(task))
       return `/api/image/files/${task.taskId}.png`
     return `/api/video/files/${task.taskId}.mp4`
   }
@@ -86,7 +89,7 @@ function getVideoSrc(task: Task): string | null {
 }
 
 function TaskMeta({ task }: Props) {
-  const isImage = isImageModel(task.model)
+  const isImage = isImageTask(task)
 
   return (
     <div className="task-meta">
@@ -169,16 +172,20 @@ function TaskMedia({ task }: Props) {
   )
 }
 
-function isVideoUrl(url: string): boolean {
-  return url.startsWith('data:video') || url.endsWith('.mp4') || url.endsWith('.mov')
-}
-
-function LoadingCard({ task }: Props) {
+function LoadingCard({ task, onRefresh }: Props) {
   const info = STATUS_MAP[task.status] || { label: task.status, className: '' }
-  const isImage = isImageModel(task.model)
+  const isImage = isImageTask(task)
   const loadingText = task.status === 'RUNNING'
     ? (isImage ? '图片生成中...' : '视频生成中...')
     : '排队等待中...'
+
+  const handleCancel = useCallback(async () => {
+    try {
+      await fetch(`/api/tasks/${task.taskId}/cancel`, { method: 'POST' })
+      onRefresh?.()
+    }
+    catch {}
+  }, [task.taskId, onRefresh])
 
   return (
     <div className="task-card task-card--loading">
@@ -195,6 +202,11 @@ function LoadingCard({ task }: Props) {
           <div className={`loading-bar-fill ${task.status === 'RUNNING' ? 'running' : ''}`} />
         </div>
         <span className="loading-text">{loadingText}</span>
+      </div>
+      <div className="task-actions">
+        <button type="button" className="task-action-btn task-cancel-btn" onClick={handleCancel}>
+          取消任务
+        </button>
       </div>
     </div>
   )
@@ -213,49 +225,93 @@ function parseUrls(value: string | null): string[] {
   return [value]
 }
 
-/** 图片结果展示 */
+/** 图片结果展示 + lightbox */
 function ImageResult({ task }: Props) {
   const src = getVideoSrc(task)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+
   if (!src)
     return null
 
-  // 多图场景：videoUrl 是 JSON 数组
   const urls = parseUrls(src)
+
+  const handleDownload = useCallback((url: string) => {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${task.taskId}.png`
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }, [task.taskId])
 
   if (urls.length <= 1) {
     return (
-      <div className="task-image-wrapper">
-        <img
-          className="task-image"
-          src={urls[0] || src}
-          alt={task.prompt}
-        />
-      </div>
+      <>
+        <div className="task-image-wrapper">
+          <img
+            className="task-image"
+            src={urls[0] || src}
+            alt={task.prompt}
+            onClick={() => setLightboxUrl(urls[0] || src)}
+          />
+          <button type="button" className="task-image-download" onClick={() => handleDownload(urls[0] || src)} title="下载图片">
+            ⬇
+          </button>
+        </div>
+        {lightboxUrl && (
+          <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+            <img className="lightbox-image" src={lightboxUrl} alt={task.prompt} />
+          </div>
+        )}
+      </>
     )
   }
 
   return (
-    <div className="task-image-grid">
-      {urls.map((url, i) => (
-        <div key={url.slice(0, 30) + i} className="task-image-wrapper">
-          <img
-            className="task-image"
-            src={url}
-            alt={`${task.prompt} - ${i + 1}`}
-          />
+    <>
+      <div className="task-image-grid">
+        {urls.map((url, i) => (
+          <div key={url.slice(0, 30) + i} className="task-image-wrapper">
+            <img
+              className="task-image"
+              src={url}
+              alt={`${task.prompt} - ${i + 1}`}
+              onClick={() => setLightboxUrl(url)}
+            />
+            <button type="button" className="task-image-download" onClick={() => handleDownload(url)} title="下载图片">
+              ⬇
+            </button>
+          </div>
+        ))}
+      </div>
+      {lightboxUrl && (
+        <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+          <img className="lightbox-image" src={lightboxUrl} alt={task.prompt} />
         </div>
-      ))}
-    </div>
+      )}
+    </>
   )
 }
 
-export function TaskCard({ task }: Props) {
+export function TaskCard({ task, onRefresh }: Props) {
   if (task.status === 'PENDING' || task.status === 'RUNNING')
-    return <LoadingCard task={task} />
+    return <LoadingCard task={task} onRefresh={onRefresh} />
 
   const info = STATUS_MAP[task.status] || { label: task.status, className: '' }
-  const isImage = isImageModel(task.model)
+  const isImage = isImageTask(task)
   const videoSrc = !isImage ? getVideoSrc(task) : null
+
+  const isFailed = task.status === 'FAILED' || task.status === 'UNKNOWN'
+
+  const handleDelete = useCallback(async () => {
+    try {
+      await fetch(`/api/tasks/${task.taskId}`, { method: 'DELETE' })
+      onRefresh?.()
+    }
+    catch {}
+  }, [task.taskId, onRefresh])
 
   return (
     <div className="task-card">
@@ -279,6 +335,13 @@ export function TaskCard({ task }: Props) {
       )}
       {task.errorMessage && (
         <p className="task-error">{task.errorMessage}</p>
+      )}
+      {(isFailed || task.status === 'CANCELED') && (
+        <div className="task-actions">
+          <button type="button" className="task-action-btn task-delete-btn" onClick={handleDelete}>
+            删除记录
+          </button>
+        </div>
       )}
     </div>
   )

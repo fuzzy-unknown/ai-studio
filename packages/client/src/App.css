@@ -846,3 +846,96 @@
     position: static;
   }
 }
+
+/* Task action buttons (delete, cancel) */
+.task-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.task-action-btn {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+}
+
+.task-delete-btn {
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.task-delete-btn:hover {
+  background: #fee2e2;
+  border-color: #dc2626;
+}
+
+.task-cancel-btn {
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.task-cancel-btn:hover {
+  background: #fef3c7;
+  border-color: #d97706;
+}
+
+/* Image download button */
+.task-image-wrapper {
+  position: relative;
+}
+
+.task-image-download {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.task-image-wrapper:hover .task-image-download {
+  opacity: 1;
+}
+
+.task-image-download:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.task-image-wrapper .task-image {
+  cursor: zoom-in;
+}
+
+/* Lightbox overlay */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+
+.lightbox-image {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
