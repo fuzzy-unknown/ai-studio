@@ -87,7 +87,7 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
             lastStatus = task.status
             send({
               status: task.status,
-              video_url: task.localPath ? `/api/video/files/${taskId}.mp4` : task.videoUrl || null,
+              video_url: task.localPath ? task.localPath : task.videoUrl || null,
               error: task.errorMessage || null,
             })
           }

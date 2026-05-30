@@ -75,6 +75,15 @@ try {
   sqlite.run('UPDATE tasks SET type = \'image\' WHERE type = \'video\' AND model LIKE \'qwen-image%\'')
 }
 catch {}
+// 迁移：videoUrl/localPath 统一为 JSON 数组格式
+try {
+  sqlite.run('UPDATE tasks SET video_url = json_array(video_url) WHERE video_url IS NOT NULL AND video_url NOT LIKE \'[%\'')
+}
+catch {}
+try {
+  sqlite.run('UPDATE tasks SET local_path = json_array(local_path) WHERE local_path IS NOT NULL AND local_path NOT LIKE \'[%\'')
+}
+catch {}
 
 // 定价配置表
 sqlite.run(`

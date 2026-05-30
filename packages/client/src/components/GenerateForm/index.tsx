@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CATEGORIES, MODEL_GROUPS } from './constants'
 import type { Category } from './constants'
 import type { GenerateFormData } from './types'
@@ -13,9 +13,27 @@ import { QwenImageForm } from './forms/QwenImageForm'
 interface Props {
   onSubmit: (data: GenerateFormData) => void
   loading: boolean
+  /** 重试时回填的数据 */
+  retryData?: Partial<GenerateFormData> | null
+  /** 重试数据被消费后的回调 */
+  onRetryConsumed?: () => void
 }
 
-export function GenerateForm({ onSubmit, loading }: Props) {
+/** 在 MODEL_GROUPS 中查找模型的三级位置 */
+function findModelPosition(modelId: string): { category: Category, subTypeIndex: number, modelIndex: number } | null {
+  for (const [cat, subTypes] of Object.entries(MODEL_GROUPS)) {
+    for (let si = 0; si < subTypes.length; si++) {
+      for (let mi = 0; mi < subTypes[si].models.length; mi++) {
+        if (subTypes[si].models[mi].value === modelId) {
+          return { category: cat as Category, subTypeIndex: si, modelIndex: mi }
+        }
+      }
+    }
+  }
+  return null
+}
+
+export function GenerateForm({ onSubmit, loading, retryData, onRetryConsumed }: Props) {
   // 一级：分类 Tab
   const [category, setCategory] = useState<Category>('video')
   const subTypes = MODEL_GROUPS[category]
@@ -31,6 +49,27 @@ export function GenerateForm({ onSubmit, loading }: Props) {
 
   const formType = currentModel.formType
 
+  // 重试：保存回填数据（独立于 retryData 生命周期，避免被 onRetryConsumed 清空）
+  const [initialData, setInitialData] = useState<Partial<GenerateFormData> | null>(null)
+  // 重试 key：每次重试递增，强制表单重新挂载以消费 initialData
+  const [retryKey, setRetryKey] = useState(0)
+  const onRetryConsumedRef = useRef(onRetryConsumed)
+  onRetryConsumedRef.current = onRetryConsumed
+
+  useEffect(() => {
+    if (!retryData?.model)
+      return
+    const pos = findModelPosition(retryData.model)
+    if (pos) {
+      setCategory(pos.category)
+      setSubTypeIndex(pos.subTypeIndex)
+      setModelIndex(pos.modelIndex)
+    }
+    setInitialData(retryData)
+    setRetryKey(k => k + 1)
+    onRetryConsumedRef.current?.()
+  }, [retryData])
+
   // 切换分类时重置二级和三级
   const handleCategoryChange = useCallback((cat: Category) => {
     setCategory(cat)
@@ -43,6 +82,8 @@ export function GenerateForm({ onSubmit, loading }: Props) {
     setSubTypeIndex(idx)
     setModelIndex(0)
   }, [])
+
+  const formKey = `${currentModel.value}-${retryKey}`
 
   return (
     <form className="generate-form" onSubmit={e => e.preventDefault()}>
@@ -85,13 +126,13 @@ export function GenerateForm({ onSubmit, loading }: Props) {
       </label>
 
       {/* 渲染对应的表单 */}
-      {formType === 't2v' && <HappyHorseT2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {formType === 'i2v' && <HappyHorseI2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {formType === 'wan27-i2v' && <Wan27I2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {formType === 'r2v' && <HappyHorseR2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {formType === 'edit' && <HappyHorseEditForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {formType === 't2i' && <QwenImageForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {formType === 'i2i' && <QwenImageEditForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 't2v' && <HappyHorseT2vForm key={formKey} model={currentModel.value} loading={loading} onSubmit={onSubmit} initialData={initialData} />}
+      {formType === 'i2v' && <HappyHorseI2vForm key={formKey} model={currentModel.value} loading={loading} onSubmit={onSubmit} initialData={initialData} />}
+      {formType === 'wan27-i2v' && <Wan27I2vForm key={formKey} model={currentModel.value} loading={loading} onSubmit={onSubmit} initialData={initialData} />}
+      {formType === 'r2v' && <HappyHorseR2vForm key={formKey} model={currentModel.value} loading={loading} onSubmit={onSubmit} initialData={initialData} />}
+      {formType === 'edit' && <HappyHorseEditForm key={formKey} model={currentModel.value} loading={loading} onSubmit={onSubmit} initialData={initialData} />}
+      {formType === 't2i' && <QwenImageForm key={formKey} model={currentModel.value} loading={loading} onSubmit={onSubmit} initialData={initialData} />}
+      {formType === 'i2i' && <QwenImageEditForm key={formKey} model={currentModel.value} loading={loading} onSubmit={onSubmit} initialData={initialData} />}
     </form>
   )
 }

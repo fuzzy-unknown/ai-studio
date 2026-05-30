@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 interface Props {
   task: Task
   onRefresh?: () => void
+  onRetry?: (task: Task) => void
 }
 
 const STATUS_MAP: Record<string, { label: string, className: string }> = {
@@ -79,12 +80,17 @@ function isVideoUrl(url: string): boolean {
 
 function getVideoSrc(task: Task): string | null {
   if (task.localPath) {
+    const paths = parseUrls(task.localPath)
+    if (paths.length === 0)
+      return null
     if (isImageTask(task))
-      return `/api/image/files/${task.taskId}.png`
-    return `/api/video/files/${task.taskId}.mp4`
+      return `/api/image/files/${paths[0].split('/').pop()}`
+    return `/api/video/files/${paths[0].split('/').pop()}`
   }
-  if (task.videoUrl)
-    return task.videoUrl
+  if (task.videoUrl) {
+    const urls = parseUrls(task.videoUrl)
+    return urls[0] || null
+  }
   return null
 }
 
@@ -225,15 +231,27 @@ function parseUrls(value: string | null): string[] {
   return [value]
 }
 
+/** 将 localPath/videoUrl JSON 数组解析为文件服务 URL 列表 */
+function resolveImageUrls(task: Task): string[] {
+  // 优先 localPath → 转为文件服务 URL
+  if (task.localPath) {
+    const paths = parseUrls(task.localPath)
+    if (paths.length > 0)
+      return paths.map(p => `/api/image/files/${p.split('/').pop()}`)
+  }
+  // 降级到 videoUrl（远程 URL）
+  if (task.videoUrl)
+    return parseUrls(task.videoUrl)
+  return []
+}
+
 /** 图片结果展示 + lightbox */
 function ImageResult({ task }: Props) {
-  const src = getVideoSrc(task)
+  const urls = resolveImageUrls(task)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
-  if (!src)
+  if (urls.length === 0)
     return null
-
-  const urls = parseUrls(src)
 
   const handleDownload = useCallback((url: string) => {
     const a = document.createElement('a')
@@ -252,11 +270,11 @@ function ImageResult({ task }: Props) {
         <div className="task-image-wrapper">
           <img
             className="task-image"
-            src={urls[0] || src}
+            src={urls[0]}
             alt={task.prompt}
-            onClick={() => setLightboxUrl(urls[0] || src)}
+            onClick={() => setLightboxUrl(urls[0])}
           />
-          <button type="button" className="task-image-download" onClick={() => handleDownload(urls[0] || src)} title="下载图片">
+          <button type="button" className="task-image-download" onClick={() => handleDownload(urls[0])} title="下载图片">
             ⬇
           </button>
         </div>
@@ -295,7 +313,7 @@ function ImageResult({ task }: Props) {
   )
 }
 
-export function TaskCard({ task, onRefresh }: Props) {
+export function TaskCard({ task, onRefresh, onRetry }: Props) {
   if (task.status === 'PENDING' || task.status === 'RUNNING')
     return <LoadingCard task={task} onRefresh={onRefresh} />
 
@@ -338,6 +356,11 @@ export function TaskCard({ task, onRefresh }: Props) {
       )}
       {(isFailed || task.status === 'CANCELED') && (
         <div className="task-actions">
+          {isFailed && (
+            <button type="button" className="task-action-btn task-retry-btn" onClick={() => onRetry?.(task)}>
+              重试
+            </button>
+          )}
           <button type="button" className="task-action-btn task-delete-btn" onClick={handleDelete}>
             删除记录
           </button>

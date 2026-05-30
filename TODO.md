@@ -29,7 +29,7 @@
 > | A3: 路由层+Service 层双重校验 | ✅ 已修复 | 校验归一到 Model Registry 的 `validate()`，路由层/Service 层共用 |
 > | A1: Model Registry | ✅ 已修复 | 新建 `modules/task/model-registry.ts`，video/image 路由和 service 均已改用注册表 |
 > | A4: DB 添加 `type` 列 | ✅ 已修复 | schema 添加 `type` 字段 + 自动迁移 + 客户端 filter 改用 `task.type` |
-> | A5: `videoUrl` 统一为 JSON 数组 | ⏳ 待实施 | 风险较高，需数据迁移脚本，建议单独 PR |
+> | A5: `videoUrl` 统一为 JSON 数组 | ✅ 已修复 | 服务端统一 JSON 数组存储 + DB 迁移 + 客户端 parseUrls 简化 |
 >
 > **新建文件清单：**
 > - `packages/server/src/modules/task/errors.ts` — 统一错误码翻译
@@ -44,6 +44,14 @@
 > - Client: `App.tsx`, `TaskCard.tsx`, `TaskList.tsx`, `useTaskWatcher.ts`, `App.css`, `vite.config.ts`, `types/index.ts`, 5 个表单组件
 >
 > **验证结果：** client build ✅ | server tsc ✅（仅 5 个预存 Elysia 类型推断警告）| 26 tests pass ✅
+>
+> **本轮新增修复（v5）:**
+>
+> | 问题 | 状态 | 实施内容 |
+> |------|------|----------|
+> | #37: 重试失败任务 | ✅ 已修复 | GenerateForm 接收 retryData，7 个表单组件支持 initialData 回填 |
+> | A5: `videoUrl` 统一为 JSON 数组 | ✅ 已修复 | 服务端统一 JSON 数组存储 + DB 迁移 + 客户端简化 |
+> | #47: 图片扩展名推断 | ✅ 已修复 | `inferImageExt()` 从 URL/Content-Type 推断扩展名 |
 
 ---
 
@@ -546,11 +554,11 @@ es.onerror = () => {
 
 **解决**: 添加取消按钮（仅 PENDING/RUNNING 状态显示）。DashScope 支持取消任务，但当前服务端没有实现。最简方案：直接将状态设为 `CANCELED`，`pollUntilDone` 检测到后停止轮询。
 
-### 37. 无法重试失败的任务
+### 37. 无法重试失败的任务 ✅ 已修复
 
 失败的任务有 prompt 和参数，但用户必须手动重新填写所有内容。
 
-**解决**: 在失败任务的卡片上添加"重试"按钮，点击后将任务的参数回填到表单。需要让 `GenerateForm` 暴露一个 `fillForm(data)` 方法，或者将表单状态提升到 App 层。
+**已实施**: `GenerateForm` 接收 `retryData`/`onRetryConsumed` props，通过 `findModelPosition()` 自动导航到正确模型，每个表单组件通过 `initialData` 参数回填 prompt/resolution/ratio/duration/size/negativePrompt 等字段。使用 `retryKey` 强制表单重新挂载以消费初始数据。
 
 ### 38. 图片结果无法下载/放大查看
 
@@ -617,11 +625,11 @@ SELECT COUNT(*) as task_count, SUM(cost) as total_cost FROM tasks WHERE status='
 
 **解决**: 服务端加判断：如果是 `qwen-image-edit` 模型，不设置 `prompt_extend`。
 
-### 47. 图片下载文件扩展名硬编码 `.png`
+### 47. 图片下载文件扩展名硬编码 `.png` ✅ 已修复
 
 `storage.ts` 的 `downloadImage` 和 `getVideoSrc` 都硬编码 `.png`。DashScope 当前总是返回 PNG，但如果未来模型返回 JPEG/WebP，文件名和实际内容不匹配。
 
-**解决**: `downloadImage` 从响应头或 URL 路径推断扩展名。短期的简单方案：保持 `.png`（浏览器 `<img>` 不关心扩展名）。
+**已实施**: `downloadImage` 新增 `inferImageExt()` 函数，从 URL 路径推断扩展名（`.jpg`/`.jpeg`/`.webp`/`.png`），降级到 `Content-Type` 响应头，默认 `.png`。`getImagePath`/`getImageRelativePath` 接受 `ext` 参数。
 
 ### 48. `Wan27I2vForm` 提交成功后重置了所有模式的状态
 

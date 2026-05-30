@@ -13,11 +13,11 @@ function isLimitedModel(model: string): boolean {
   return model === 'qwen-image-edit'
 }
 
-export function QwenImageEditForm({ model, loading, onSubmit }: ModelFormProps) {
+export function QwenImageEditForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
   const [imageUrls, setImageUrls] = useState<string[]>([])
-  const [prompt, setPrompt] = useState('')
-  const [size, setSize] = useState('2048*2048')
-  const [negativePrompt, setNegativePrompt] = useState('')
+  const [prompt, setPrompt] = useState(initialData?.prompt ?? '')
+  const [size, setSize] = useState(initialData?.size ?? '2048*2048')
+  const [negativePrompt, setNegativePrompt] = useState(initialData?.negativePrompt ?? '')
   const [n, setN] = useState(1)
   const [promptExtend, setPromptExtend] = useState(true)
   const [watermark, setWatermark] = useState(false)

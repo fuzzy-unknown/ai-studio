@@ -69,7 +69,7 @@ const SUB_TASK_MODES: { value: SubTaskMode, label: string }[] = [
   { value: 'video_continuation', label: '视频续写' },
 ]
 
-export function Wan27I2vForm({ model, loading, onSubmit }: ModelFormProps) {
+export function Wan27I2vForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
   const [mode, setMode] = useState<SubTaskMode>('first_frame')
 
   // 首帧图片
@@ -83,11 +83,11 @@ export function Wan27I2vForm({ model, loading, onSubmit }: ModelFormProps) {
   // 首段视频
   const [firstClipUrl, setFirstClipUrl] = useState('')
 
-  const [prompt, setPrompt] = useState('')
-  const [negativePrompt, setNegativePrompt] = useState('')
+  const [prompt, setPrompt] = useState(initialData?.prompt ?? '')
+  const [negativePrompt, setNegativePrompt] = useState(initialData?.negativePrompt ?? '')
   const [promptExtend, setPromptExtend] = useState(true)
-  const [resolution, setResolution] = useState('1080P')
-  const [duration, setDuration] = useState(5)
+  const [resolution, setResolution] = useState(initialData?.resolution ?? '1080P')
+  const [duration, setDuration] = useState(initialData?.duration ?? 5)
   const [watermark, setWatermark] = useState(false)
   const [seed, setSeed] = useState<number | undefined>(undefined)
 

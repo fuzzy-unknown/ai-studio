@@ -12,17 +12,17 @@ function isV2Model(model: string): boolean {
   return model.startsWith('qwen-image-2.0')
 }
 
-export function QwenImageForm({ model, loading, onSubmit }: ModelFormProps) {
-  const [prompt, setPrompt] = useState('')
+export function QwenImageForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
+  const [prompt, setPrompt] = useState(initialData?.prompt ?? '')
   const sizes = useMemo(
     () => isV2Model(model) ? IMAGE_SIZES_V2 : IMAGE_SIZES_LEGACY,
     [model],
   )
   const defaultSize = isV2Model(model) ? '2048*2048' : '1664*928'
-  const [size, setSize] = useState(defaultSize)
+  const [size, setSize] = useState(initialData?.size ?? defaultSize)
   const showN = isV2Model(model)
-  const [n, setN] = useState(1)
-  const [negativePrompt, setNegativePrompt] = useState('')
+  const [n, setN] = useState(initialData?.n ?? 1)
+  const [negativePrompt, setNegativePrompt] = useState(initialData?.negativePrompt ?? '')
   const [promptExtend, setPromptExtend] = useState(true)
   const [watermark, setWatermark] = useState(false)
   const [seed, setSeed] = useState<number | undefined>(undefined)
@@ -30,8 +30,13 @@ export function QwenImageForm({ model, loading, onSubmit }: ModelFormProps) {
 
   const editorRef = useRef<PromptEditorHandle>(null)
 
-  // 模型切换时重置 size 和 n
+  // 模型切换时重置 size 和 n — 首次挂载有 initialData 时跳过，保留回填值
+  const hasInitialDataRef = useRef(!!initialData)
   useMemo(() => {
+    if (hasInitialDataRef.current) {
+      hasInitialDataRef.current = false
+      return
+    }
     setSize(isV2Model(model) ? '2048*2048' : '1664*928')
     if (!isV2Model(model))
       setN(1)

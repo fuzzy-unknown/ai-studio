@@ -233,13 +233,9 @@ export abstract class ImageService {
         }
       }
 
-      // videoUrl 存 JSON 数组（多图时），单图时直接存 URL
-      const videoUrl = result.imageUrls.length === 1
-        ? result.imageUrls[0]
-        : JSON.stringify(result.imageUrls)
-      const localPath = localPaths.length === 1
-        ? localPaths[0]
-        : (localPaths.length > 1 ? JSON.stringify(localPaths) : null)
+      // videoUrl/localPath 统一存 JSON 数组
+      const videoUrl = JSON.stringify(result.imageUrls)
+      const localPath = localPaths.length > 0 ? JSON.stringify(localPaths) : null
 
       await db.insert(tasks).values({
         taskId: localTaskId,
@@ -316,10 +312,8 @@ export abstract class ImageService {
       cost = await calculateImageCost(model, imageCount)
     }
 
-    // videoUrl: 单图直接存 URL，多图存 JSON 数组
-    const videoUrl = imageUrls.length === 1
-      ? imageUrls[0]
-      : (imageUrls.length > 1 ? JSON.stringify(imageUrls) : null)
+    // videoUrl: 统一存 JSON 数组
+    const videoUrl = imageUrls.length > 0 ? JSON.stringify(imageUrls) : null
 
     await db
       .update(tasks)
@@ -342,9 +336,7 @@ export abstract class ImageService {
         const path = await downloadImage(imageUrls[i], `${taskId}${suffix}`)
         localPaths.push(path)
       }
-      const localPath = localPaths.length === 1
-        ? localPaths[0]
-        : JSON.stringify(localPaths)
+      const localPath = localPaths.length > 0 ? JSON.stringify(localPaths) : null
       await db
         .update(tasks)
         .set({ localPath, updatedAt: sql`(datetime('now'))` })

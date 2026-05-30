@@ -7,7 +7,7 @@
 import { Elysia, t } from 'elysia'
 import { logger } from '../../utils/logger'
 import { createSSEStream } from './sse'
-import { cancelTask, deleteTask, getAllTasks, getTaskByTaskId, getUsageStats } from './shared'
+import { cancelTask, deleteTask, getAllTasks, getTaskByTaskId, getUsageStats, parseMediaUrls } from './shared'
 
 export const taskModule = new Elysia({ prefix: '/api', name: 'module:task' })
   .onBeforeHandle(({ request }) => {
@@ -27,11 +27,25 @@ export const taskModule = new Elysia({ prefix: '/api', name: 'module:task' })
   .get('/tasks/:taskId/events', async ({ params: { taskId } }) => {
     return createSSEStream(taskId, {
       resolveMediaUrl: (task) => {
-        // 根据模型类型选择正确的文件服务端点
+        // videoUrl/localPath 统一为 JSON 数组，解析出实际 URL 列表
         const isImage = task.model?.startsWith('qwen-image')
-        if (isImage)
-          return task.localPath ? `/api/image/files/${task.taskId}.png` : task.videoUrl || null
-        return task.localPath ? `/api/video/files/${task.taskId}.mp4` : task.videoUrl || null
+        if (task.localPath) {
+          const localUrls = parseMediaUrls(task.localPath)
+          // 将本地相对路径转为文件服务 URL
+          const prefix = isImage ? '/api/image/files/' : '/api/video/files/'
+          // 单文件直接返回第一个路径的 URL
+          if (localUrls.length === 1) {
+            const filename = localUrls[0].split('/').pop()
+            return filename ? `${prefix}${filename}` : null
+          }
+          // 多文件返回 JSON 数组 URL
+          return JSON.stringify(localUrls.map((p) => {
+            const filename = p.split('/').pop()
+            return filename ? `${prefix}${filename}` : null
+          }).filter(Boolean))
+        }
+        // 无本地文件时返回远程 URL（已是 JSON 数组格式）
+        return task.videoUrl || null
       },
       logPrefix: '[SSE-Task]',
     })

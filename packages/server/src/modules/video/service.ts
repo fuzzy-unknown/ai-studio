@@ -224,7 +224,7 @@ export abstract class VideoService {
       .update(tasks)
       .set({
         status,
-        videoUrl: videoUrl || null,
+        videoUrl: videoUrl ? JSON.stringify([videoUrl]) : null,
         errorMessage: errorMessage || null,
         usage: usage ? JSON.stringify(usage) : null,
         cost,
@@ -238,7 +238,7 @@ export abstract class VideoService {
       const localPath = await downloadVideo(videoUrl, taskId)
       await db
         .update(tasks)
-        .set({ localPath, updatedAt: sql`(datetime('now'))` })
+        .set({ localPath: JSON.stringify([localPath]), updatedAt: sql`(datetime('now'))` })
         .where(eq(tasks.taskId, taskId))
       logger.info({ taskId, localPath }, '[VideoService] Local path saved to DB')
       return localPath

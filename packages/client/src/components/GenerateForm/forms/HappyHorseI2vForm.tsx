@@ -7,12 +7,12 @@ import type { PromptEditorHandle } from '../shared/PromptEditor'
 import { SingleImageInput } from '../shared/SingleImageInput'
 import { fileToBase64 } from '../../../utils/fileToBase64'
 
-export function HappyHorseI2vForm({ model, loading, onSubmit }: ModelFormProps) {
-  const [prompt, setPrompt] = useState('')
+export function HappyHorseI2vForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
+  const [prompt, setPrompt] = useState(initialData?.prompt ?? '')
   const [imageUrl, setImageUrl] = useState('')
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [resolution, setResolution] = useState('1080P')
-  const [duration, setDuration] = useState(5)
+  const [resolution, setResolution] = useState(initialData?.resolution ?? '1080P')
+  const [duration, setDuration] = useState(initialData?.duration ?? 5)
   const [watermark, setWatermark] = useState(true)
   const [seed, setSeed] = useState<number | undefined>(undefined)
 

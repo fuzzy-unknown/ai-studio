@@ -13,6 +13,23 @@ import { logger } from '../../utils/logger'
 
 export const TERMINAL_STATES = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
 
+/**
+ * 解析 videoUrl/localPath — 统一 JSON 数组格式后的读取工具
+ * 返回 string[] （空数组表示无数据）
+ */
+export function parseMediaUrls(value: string | null): string[] {
+  if (!value)
+    return []
+  try {
+    const parsed = JSON.parse(value)
+    if (Array.isArray(parsed))
+      return parsed
+  }
+  catch {}
+  // 兼容迁移前可能的裸字符串（理论上迁移后不应出现）
+  return [value]
+}
+
 export function getApiKey(): string {
   const key = process.env.DASHSCOPE_API_KEY
   if (!key)

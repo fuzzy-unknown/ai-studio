@@ -7,11 +7,11 @@ import { PromptEditor } from '../shared/PromptEditor'
 import type { PromptEditorHandle } from '../shared/PromptEditor'
 import { fileToBase64 } from '../../../utils/fileToBase64'
 
-export function HappyHorseEditForm({ model, loading, onSubmit }: ModelFormProps) {
-  const [prompt, setPrompt] = useState('')
+export function HappyHorseEditForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
+  const [prompt, setPrompt] = useState(initialData?.prompt ?? '')
   const [videoUrl, setVideoUrl] = useState('')
   const [imageUrls, setImageUrls] = useState<string[]>([])
-  const [resolution, setResolution] = useState('1080P')
+  const [resolution, setResolution] = useState(initialData?.resolution ?? '1080P')
   const [watermark, setWatermark] = useState(true)
   const [audioSetting, setAudioSetting] = useState('auto')
   const [seed, setSeed] = useState<number | undefined>(undefined)

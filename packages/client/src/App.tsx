@@ -12,6 +12,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [stats, setStats] = useState<UsageStats | null>(null)
   const [taskFilter, setTaskFilter] = useState<'all' | 'video' | 'image'>('all')
+  const [retryData, setRetryData] = useState<Partial<GenerateFormData> | null>(null)
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -152,7 +153,7 @@ export default function App() {
 
       <div className="app-body">
         <section className="app-left">
-          <GenerateForm onSubmit={handleGenerate} loading={loading} />
+          <GenerateForm onSubmit={handleGenerate} loading={loading} retryData={retryData} onRetryConsumed={() => setRetryData(null)} />
         </section>
         <section className="app-right">
           <div className="section-header">
@@ -174,7 +175,20 @@ export default function App() {
               ))}
             </div>
           </div>
-          <TaskList tasks={filteredTasks} onRefresh={() => { fetchTasks(); fetchStats() }} />
+          <TaskList tasks={filteredTasks} onRefresh={() => { fetchTasks(); fetchStats() }} onRetry={(task) => {
+            const isImage = task.type === 'image' || task.model?.startsWith('qwen-image')
+            setRetryData({
+              model: task.model || undefined,
+              prompt: task.prompt,
+              resolution: task.resolution || (isImage ? task.size : undefined) || '',
+              size: isImage ? (task.size ?? undefined) : undefined,
+              ratio: task.ratio || undefined,
+              duration: task.duration || undefined,
+              negativePrompt: task.negativePrompt || undefined,
+            })
+            // 切换到对应的 category tab
+            setTaskFilter(isImage ? 'image' : 'video')
+          }} />
         </section>
       </div>
     </div>

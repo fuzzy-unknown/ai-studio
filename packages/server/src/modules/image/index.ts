@@ -96,8 +96,8 @@ export const imageModule = new Elysia({ prefix: '/api/image', name: 'module:imag
             lastStatus = task.status
             send({
               status: task.status,
-              // 图片结果：优先本地路径，否则远程 URL
-              video_url: task.localPath ? `/api/image/files/${taskId}.png` : task.videoUrl || null,
+              // videoUrl/localPath 统一为 JSON 数组，直接传递
+              video_url: task.localPath || task.videoUrl || null,
               error: task.errorMessage || null,
             })
           }

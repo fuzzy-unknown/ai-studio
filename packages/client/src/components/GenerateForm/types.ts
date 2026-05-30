@@ -27,4 +27,6 @@ export interface ModelFormProps {
   model: string
   loading: boolean
   onSubmit: (data: GenerateFormData) => void
+  /** 重试时回填的初始数据 */
+  initialData?: Partial<GenerateFormData> | null
 }

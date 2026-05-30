@@ -875,6 +875,16 @@
   border-color: #dc2626;
 }
 
+.task-retry-btn {
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+
+.task-retry-btn:hover {
+  background: #dbeafe;
+  border-color: #2563eb;
+}
+
 .task-cancel-btn {
   border-color: #fcd34d;
   color: #92400e;

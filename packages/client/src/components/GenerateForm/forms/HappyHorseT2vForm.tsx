@@ -5,11 +5,11 @@ import { AdvancedOptions } from '../shared/AdvancedOptions'
 import { PromptEditor } from '../shared/PromptEditor'
 import type { PromptEditorHandle } from '../shared/PromptEditor'
 
-export function HappyHorseT2vForm({ model, loading, onSubmit }: ModelFormProps) {
-  const [prompt, setPrompt] = useState('')
-  const [resolution, setResolution] = useState('720P')
-  const [ratio, setRatio] = useState('16:9')
-  const [duration, setDuration] = useState(5)
+export function HappyHorseT2vForm({ model, loading, onSubmit, initialData }: ModelFormProps) {
+  const [prompt, setPrompt] = useState(initialData?.prompt ?? '')
+  const [resolution, setResolution] = useState(initialData?.resolution ?? '720P')
+  const [ratio, setRatio] = useState(initialData?.ratio ?? '16:9')
+  const [duration, setDuration] = useState(initialData?.duration ?? 5)
   const [watermark, setWatermark] = useState(true)
   const [seed, setSeed] = useState<number | undefined>(undefined)
 
