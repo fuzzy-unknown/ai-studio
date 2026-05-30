@@ -10,6 +10,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [stats, setStats] = useState<UsageStats | null>(null)
+  const [taskFilter, setTaskFilter] = useState<'all' | 'video' | 'image'>('all')
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -49,6 +50,17 @@ export default function App() {
     () => new Map(tasks.map(t => [t.taskId, t.model ?? ''])),
     [tasks],
   )
+
+  // 按 tab 筛选任务
+  const filteredTasks = useMemo(() => {
+    if (taskFilter === 'all')
+      return tasks
+    return tasks.filter(t =>
+      taskFilter === 'image'
+        ? t.model?.startsWith('qwen-image')
+        : !t.model?.startsWith('qwen-image'),
+    )
+  }, [tasks, taskFilter])
 
   useTaskWatcher(watchingIds, useCallback((taskId: string, event: any) => {
     setTasks(prev => prev.map(t =>
@@ -113,8 +125,26 @@ export default function App() {
           <GenerateForm onSubmit={handleGenerate} loading={loading} />
         </section>
         <section className="app-right">
-          <h2 className="section-title">生成记录</h2>
-          <TaskList tasks={tasks} />
+          <div className="section-header">
+            <h2 className="section-title">生成记录</h2>
+            <div className="filter-tabs">
+              {([
+                { value: 'all' as const, label: '全部' },
+                { value: 'video' as const, label: '视频' },
+                { value: 'image' as const, label: '图片' },
+              ]).map(f => (
+                <button
+                  type="button"
+                  key={f.value}
+                  className={`filter-tab ${taskFilter === f.value ? 'active' : ''}`}
+                  onClick={() => setTaskFilter(f.value)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <TaskList tasks={filteredTasks} />
         </section>
       </div>
     </div>

@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import {
-  IMAGE_MODELS,
   IMAGE_SIZES_LEGACY,
   IMAGE_SIZES_V2,
 } from '../constants'
@@ -13,10 +12,15 @@ function isV2Model(model: string): boolean {
   return model.startsWith('qwen-image-2.0')
 }
 
-export function QwenImageForm({ model: initialModel, loading, onSubmit }: ModelFormProps) {
-  const [subModel, setSubModel] = useState(initialModel)
+export function QwenImageForm({ model, loading, onSubmit }: ModelFormProps) {
   const [prompt, setPrompt] = useState('')
-  const [size, setSize] = useState(isV2Model(initialModel) ? '2048*2048' : '1664*928')
+  const sizes = useMemo(
+    () => isV2Model(model) ? IMAGE_SIZES_V2 : IMAGE_SIZES_LEGACY,
+    [model],
+  )
+  const defaultSize = isV2Model(model) ? '2048*2048' : '1664*928'
+  const [size, setSize] = useState(defaultSize)
+  const showN = isV2Model(model)
   const [n, setN] = useState(1)
   const [negativePrompt, setNegativePrompt] = useState('')
   const [promptExtend, setPromptExtend] = useState(true)
@@ -26,32 +30,21 @@ export function QwenImageForm({ model: initialModel, loading, onSubmit }: ModelF
 
   const editorRef = useRef<PromptEditorHandle>(null)
 
-  const sizes = useMemo(
-    () => isV2Model(subModel) ? IMAGE_SIZES_V2 : IMAGE_SIZES_LEGACY,
-    [subModel],
-  )
-
-  const showN = isV2Model(subModel)
+  // 模型切换时重置 size 和 n
+  useMemo(() => {
+    setSize(isV2Model(model) ? '2048*2048' : '1664*928')
+    if (!isV2Model(model))
+      setN(1)
+  }, [model])
 
   const canSubmit = prompt.trim() && !loading
-
-  const handleSubModelChange = useCallback((newModel: string) => {
-    setSubModel(newModel)
-    // 切换系列时重置 size
-    if (isV2Model(newModel))
-      setSize('2048*2048')
-    else
-      setSize('1664*928')
-    if (!isV2Model(newModel))
-      setN(1)
-  }, [])
 
   const handleSubmit = useCallback(() => {
     if (!canSubmit)
       return
     const data: GenerateFormData = {
       prompt: prompt.trim(),
-      model: subModel,
+      model,
       resolution: size,
       size,
       n: showN ? n : 1,
@@ -63,17 +56,10 @@ export function QwenImageForm({ model: initialModel, loading, onSubmit }: ModelF
     onSubmit(data)
     setPrompt('')
     editorRef.current?.setContent('', [])
-  }, [canSubmit, prompt, subModel, size, n, showN, negativePrompt, promptExtend, watermark, seed, onSubmit])
+  }, [canSubmit, prompt, model, size, n, showN, negativePrompt, promptExtend, watermark, seed, onSubmit])
 
   return (
     <>
-      <label className="form-label">
-        子模型
-        <select value={subModel} onChange={e => handleSubModelChange(e.target.value)} disabled={loading}>
-          {IMAGE_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
-      </label>
-
       <PromptEditor
         ref={editorRef}
         value={prompt}

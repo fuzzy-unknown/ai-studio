@@ -66,7 +66,41 @@
   font-size: 0.9375rem;
   font-weight: 600;
   color: #666;
+}
+
+/* Section header with filter tabs */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 0.75rem;
+}
+
+.filter-tabs {
+  display: flex;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #e5e5ee;
+}
+
+.filter-tab {
+  padding: 0.3rem 0.75rem;
+  border: none;
+  background: #f9f9ff;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-tab.active {
+  background: #6366f1;
+  color: #fff;
+}
+
+.filter-tab:not(.active):hover {
+  background: #eef0ff;
 }
 
 /* Form */
@@ -94,6 +128,65 @@
   padding: 1.25rem;
   border-radius: 12px;
   border: 1px solid #e5e5ee;
+}
+
+/* Category tabs */
+.category-tabs {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e5ee;
+}
+
+.category-tab {
+  flex: 1;
+  padding: 0.5rem;
+  border: none;
+  background: #f9f9ff;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.category-tab.active {
+  background: #6366f1;
+  color: #fff;
+}
+
+.category-tab:not(:disabled):not(.active):hover {
+  background: #eef0ff;
+}
+
+/* Sub-type tabs (二级功能选择) */
+.subtype-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.subtype-tab {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #e5e5ee;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.8125rem;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.subtype-tab.active {
+  background: #eef0ff;
+  color: #6366f1;
+  border-color: #6366f1;
+  font-weight: 500;
+}
+
+.subtype-tab:not(:disabled):not(.active):hover {
+  background: #f9f9ff;
+  border-color: #c7d2fe;
 }
 
 .generate-form textarea,
