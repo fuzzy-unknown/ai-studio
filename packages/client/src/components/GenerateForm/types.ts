@@ -16,6 +16,10 @@ export interface GenerateFormData {
   negativePrompt?: string
   n?: number
   promptExtend?: boolean
+  // 万相2.7 图生视频专属
+  lastFrameUrl?: string
+  drivingAudioUrl?: string
+  firstClipUrl?: string
 }
 
 /** 每个模型表单的 props */

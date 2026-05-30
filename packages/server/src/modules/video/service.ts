@@ -13,6 +13,7 @@ const TERMINAL_STATES = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
 const I2V_MODEL = 'happyhorse-1.0-i2v'
 const R2V_MODEL = 'happyhorse-1.0-r2v'
 const VIDEO_EDIT_MODEL = 'happyhorse-1.0-video-edit'
+const WAN27_I2V_MODEL = 'wan2.7-i2v-2026-04-25'
 
 const ERROR_CODE_MAP: Record<string, string> = {
   'InvalidApiKey': 'API Key 无效，请检查 DASHSCOPE_API_KEY 配置',
@@ -63,6 +64,10 @@ function isVideoEdit(model?: string): boolean {
   return model === VIDEO_EDIT_MODEL
 }
 
+function isWan27I2v(model?: string): boolean {
+  return model === WAN27_I2V_MODEL
+}
+
 interface CreateTaskParams {
   prompt: string
   model?: string
@@ -75,6 +80,12 @@ interface CreateTaskParams {
   watermark?: boolean
   audioSetting?: string
   seed?: number
+  // 万相2.7 图生视频专属
+  lastFrameUrl?: string
+  drivingAudioUrl?: string
+  firstClipUrl?: string
+  negativePrompt?: string
+  promptExtend?: boolean
 }
 
 interface DashScopeCreateResult {
@@ -97,9 +108,27 @@ async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeC
   const i2v = isI2v(model)
   const r2v = isR2v(model)
   const videoEdit = isVideoEdit(model)
+  const wan27 = isWan27I2v(model)
 
   const input: any = { prompt: params.prompt }
-  if (videoEdit) {
+
+  // 万相2.7 图生视频：根据参数组装 media 数组
+  if (wan27) {
+    const media: { type: string, url: string }[] = []
+    if (params.imageUrl)
+      media.push({ type: 'first_frame', url: params.imageUrl })
+    if (params.lastFrameUrl)
+      media.push({ type: 'last_frame', url: params.lastFrameUrl })
+    if (params.drivingAudioUrl)
+      media.push({ type: 'driving_audio', url: params.drivingAudioUrl })
+    if (params.firstClipUrl)
+      media.push({ type: 'first_clip', url: params.firstClipUrl })
+    if (media.length > 0)
+      input.media = media
+    if (params.negativePrompt)
+      input.negative_prompt = params.negativePrompt
+  }
+  else if (videoEdit) {
     input.media = [{ type: 'video', url: params.videoUrl }]
     if (params.imageUrls?.length)
       input.media.push(...params.imageUrls.map(url => ({ type: 'reference_image', url })))
@@ -114,7 +143,7 @@ async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeC
   const parameters: any = {
     resolution: params.resolution || '1080P',
   }
-  if (!i2v && !videoEdit) {
+  if (!i2v && !videoEdit && !wan27) {
     parameters.ratio = params.ratio || '16:9'
   }
   if (!videoEdit) {
@@ -128,6 +157,9 @@ async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeC
   // audio_setting 仅 video-edit 支持
   if (videoEdit && params.audioSetting)
     parameters.audio_setting = params.audioSetting
+  // prompt_extend 仅万相2.7 支持
+  if (wan27 && params.promptExtend !== undefined)
+    parameters.prompt_extend = params.promptExtend
 
   const body = { model, input, parameters }
 
@@ -182,18 +214,23 @@ export abstract class VideoService {
     const i2v = isI2v(params.model)
     const r2v = isR2v(params.model)
     const videoEdit = isVideoEdit(params.model)
+    const wan27 = isWan27I2v(params.model)
     if (i2v && !params.imageUrl)
       throw new Error('imageUrl is required for image-to-video model')
     if (r2v && (!params.imageUrls || params.imageUrls.length === 0))
       throw new Error('imageUrls is required for reference-to-video model')
     if (videoEdit && !params.videoUrl)
       throw new Error('videoUrl is required for video-edit model')
+    if (wan27 && !params.imageUrl && !params.firstClipUrl)
+      throw new Error('imageUrl or firstClipUrl is required for wan2.7-i2v model')
 
     const result = await callDashScopeCreate(params)
 
-    const storedImageUrl = r2v || videoEdit
-      ? (params.imageUrls && params.imageUrls.length > 0 ? JSON.stringify(params.imageUrls) : null)
-      : (params.imageUrl || null)
+    const storedImageUrl = wan27
+      ? JSON.stringify([params.imageUrl, params.lastFrameUrl, params.drivingAudioUrl, params.firstClipUrl].filter(Boolean))
+      : r2v || videoEdit
+        ? (params.imageUrls && params.imageUrls.length > 0 ? JSON.stringify(params.imageUrls) : null)
+        : (params.imageUrl || null)
 
     await db.insert(tasks).values({
       taskId: result.task_id,

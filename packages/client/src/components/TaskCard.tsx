@@ -18,6 +18,7 @@ const MODEL_LABELS: Record<string, string> = {
   'happyhorse-1.0-i2v': '图生视频',
   'happyhorse-1.0-r2v': '参考生视频',
   'happyhorse-1.0-video-edit': '视频编辑',
+  'wan2.7-i2v-2026-04-25': '万相2.7 图生视频',
   'qwen-image-2.0-pro': '文生图 Pro',
   'qwen-image-2.0': '文生图 2.0',
   'qwen-image-max': '文生图 Max',
@@ -40,9 +41,22 @@ function isVideoEdit(model: string | null): boolean {
   return model === 'happyhorse-1.0-video-edit'
 }
 
+function isWan27I2v(model: string | null): boolean {
+  return model === 'wan2.7-i2v-2026-04-25'
+}
+
 function getRefImages(task: Task): string[] {
   if (!task.inputImageUrl)
     return []
+  // wan2.7 存储为 [imageUrl, lastFrameUrl, drivingAudioUrl, firstClipUrl] 的 JSON 数组
+  if (isWan27I2v(task.model)) {
+    try {
+      const parsed = JSON.parse(task.inputImageUrl)
+      if (Array.isArray(parsed))
+        return parsed.filter((url: string) => !isAudioUrl(url))
+    }
+    catch {}
+  }
   if (isR2v(task.model) || isVideoEdit(task.model)) {
     try {
       const parsed = JSON.parse(task.inputImageUrl)
@@ -52,6 +66,10 @@ function getRefImages(task: Task): string[] {
     catch {}
   }
   return [task.inputImageUrl]
+}
+
+function isAudioUrl(url: string): boolean {
+  return url.startsWith('data:audio') || url.endsWith('.mp3') || url.endsWith('.wav')
 }
 
 function getVideoSrc(task: Task): string | null {
@@ -90,17 +108,20 @@ function TaskMeta({ task }: Props) {
 /** Unified media display — shows input video + reference images together */
 function TaskMedia({ task }: Props) {
   const refImages = getRefImages(task)
-  const hasVideo = isVideoEdit(task.model) && !!task.inputVideoUrl
-  const hasImages = refImages.length > 0
+  const wan27 = isWan27I2v(task.model)
+  const hasVideo = (isVideoEdit(task.model) && !!task.inputVideoUrl) || (wan27 && refImages.some(url => isVideoUrl(url)))
+  const hasImages = refImages.length > 0 && (wan27 ? refImages.some(url => !isVideoUrl(url)) : true)
 
   if (!hasVideo && !hasImages)
     return null
 
   const imgLabel = isI2v(task.model) ? '首帧' : '参考图'
+  const imagesOnly = wan27 ? refImages.filter(url => !isVideoUrl(url)) : refImages
+  const videoUrls = wan27 ? refImages.filter(url => isVideoUrl(url)) : []
 
   return (
     <div className="task-media">
-      {hasVideo && (
+      {(isVideoEdit(task.model) && task.inputVideoUrl) && (
         <div className="task-media-item">
           <video
             src={task.inputVideoUrl ?? undefined}
@@ -114,24 +135,40 @@ function TaskMedia({ task }: Props) {
           <span className="task-ref-label">输入视频</span>
         </div>
       )}
-      {hasImages && refImages.length === 1 && !hasVideo && (
+      {videoUrls.map((url, i) => (
+        <div key={url.slice(0, 30) + i} className="task-media-item">
+          <video
+            src={url}
+            className="task-media-video"
+            muted
+            autoPlay
+            loop
+            playsInline
+            preload="auto"
+          />
+          <span className="task-ref-label">输入视频</span>
+        </div>
+      ))}
+      {hasImages && imagesOnly.length === 1 && !hasVideo && (
         <div className="task-media-item">
-          <img src={refImages[0]} alt={imgLabel} />
-          <span className="task-ref-label">{imgLabel}</span>
+          <img src={imagesOnly[0]} alt={wan27 ? '首帧' : imgLabel} />
+          <span className="task-ref-label">{wan27 ? '首帧' : imgLabel}</span>
         </div>
       )}
-      {hasImages && (refImages.length > 1 || hasVideo) && refImages.map((url, i) => (
+      {hasImages && (imagesOnly.length > 1 || hasVideo) && imagesOnly.map((url, i) => (
         <div key={url.slice(0, 30) + i} className="task-media-item">
           <img src={url} alt={`参考图 ${i + 1}`} />
           <span className="task-ref-label">
-            {imgLabel}
-            {' '}
-            {i + 1}
+            {wan27 ? (i === 0 ? '首帧' : '尾帧') : `${imgLabel} ${i + 1}`}
           </span>
         </div>
       ))}
     </div>
   )
+}
+
+function isVideoUrl(url: string): boolean {
+  return url.startsWith('data:video') || url.endsWith('.mp4') || url.endsWith('.mov')
 }
 
 function LoadingCard({ task }: Props) {

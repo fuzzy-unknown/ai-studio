@@ -6,6 +6,7 @@ import { HappyHorseEditForm } from './forms/HappyHorseEditForm'
 import { HappyHorseI2vForm } from './forms/HappyHorseI2vForm'
 import { HappyHorseR2vForm } from './forms/HappyHorseR2vForm'
 import { HappyHorseT2vForm } from './forms/HappyHorseT2vForm'
+import { Wan27I2vForm } from './forms/Wan27I2vForm'
 import { QwenImageForm } from './forms/QwenImageForm'
 
 interface Props {
@@ -27,7 +28,7 @@ export function GenerateForm({ onSubmit, loading }: Props) {
   const [modelIndex, setModelIndex] = useState(0)
   const currentModel = models[Math.min(modelIndex, models.length - 1)]
 
-  const type = currentSubType.type
+  const formType = currentModel.formType
 
   // 切换分类时重置二级和三级
   const handleCategoryChange = useCallback((cat: Category) => {
@@ -83,11 +84,12 @@ export function GenerateForm({ onSubmit, loading }: Props) {
       </label>
 
       {/* 渲染对应的表单 */}
-      {type === 't2v' && <HappyHorseT2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {type === 'i2v' && <HappyHorseI2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {type === 'r2v' && <HappyHorseR2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {type === 'edit' && <HappyHorseEditForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
-      {type === 't2i' && <QwenImageForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 't2v' && <HappyHorseT2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 'i2v' && <HappyHorseI2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 'wan27-i2v' && <Wan27I2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 'r2v' && <HappyHorseR2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 'edit' && <HappyHorseEditForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 't2i' && <QwenImageForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
     </form>
   )
 }

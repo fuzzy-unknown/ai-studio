@@ -18,10 +18,16 @@ export const GenerateBody = t.Object({
     t.Literal('9:21'),
     t.Literal('21:9'),
   ], { error: 'invalid ratio' })),
-  duration: t.Optional(t.Integer({ minimum: 3, maximum: 15, error: 'duration must be 3-15' })),
+  duration: t.Optional(t.Integer({ minimum: 2, maximum: 15, error: 'duration must be 2-15' })),
   watermark: t.Optional(t.Boolean()),
   audioSetting: t.Optional(t.Union([t.Literal('auto'), t.Literal('origin')], { error: 'audioSetting must be auto or origin' })),
   seed: t.Optional(t.Integer({ minimum: 0, maximum: 2147483647, error: 'seed must be 0-2147483647' })),
+  // 万相2.7 图生视频专属参数
+  lastFrameUrl: t.Optional(t.String()),
+  drivingAudioUrl: t.Optional(t.String()),
+  firstClipUrl: t.Optional(t.String()),
+  negativePrompt: t.Optional(t.String({ maxLength: 500 })),
+  promptExtend: t.Optional(t.Boolean()),
 })
 
 export const GenerateResponse = t.Object({

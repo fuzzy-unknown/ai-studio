@@ -214,8 +214,13 @@ describe('POST /api/video/generate — duration 边界值', () => {
     expect(res.status).not.toBe(400)
   })
 
-  it('duration 小于最小值时返回 400', async () => {
+  it('duration 边界值 2 验证通过（万相2.7 支持）', async () => {
     const res = await app.handle(postRequest({ prompt: 'test', duration: 2 }))
+    expect(res.status).not.toBe(400)
+  })
+
+  it('duration 小于最小值时返回 400', async () => {
+    const res = await app.handle(postRequest({ prompt: 'test', duration: 1 }))
     expect(res.status).toBe(400)
   })
 

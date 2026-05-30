@@ -13,10 +13,16 @@ export const CATEGORIES = [
  * 二级：文生视频 / 图生视频 / ... （Tab）
  * 三级：具体模型 ID（下拉，仅多项时显示）
  */
+export interface ModelEntry {
+  value: string
+  label: string
+  formType: ModelType
+}
+
 export interface ModelSubType {
   type: string
   label: string
-  models: { value: string, label: string }[]
+  models: ModelEntry[]
 }
 
 export const MODEL_GROUPS: Record<Category, ModelSubType[]> = {
@@ -25,28 +31,29 @@ export const MODEL_GROUPS: Record<Category, ModelSubType[]> = {
       type: 't2v',
       label: '文生视频',
       models: [
-        { value: 'happyhorse-1.0-t2v', label: 'happyhorse-1.0-t2v' },
+        { value: 'happyhorse-1.0-t2v', label: 'happyhorse-1.0-t2v', formType: 't2v' },
       ],
     },
     {
       type: 'i2v',
       label: '图生视频',
       models: [
-        { value: 'happyhorse-1.0-i2v', label: 'happyhorse-1.0-i2v' },
+        { value: 'wan2.7-i2v-2026-04-25', label: '万相2.7 图生视频（推荐）', formType: 'wan27-i2v' },
+        { value: 'happyhorse-1.0-i2v', label: 'happyhorse-1.0-i2v', formType: 'i2v' },
       ],
     },
     {
       type: 'r2v',
       label: '参考生视频',
       models: [
-        { value: 'happyhorse-1.0-r2v', label: 'happyhorse-1.0-r2v' },
+        { value: 'happyhorse-1.0-r2v', label: 'happyhorse-1.0-r2v', formType: 'r2v' },
       ],
     },
     {
       type: 'edit',
       label: '视频编辑',
       models: [
-        { value: 'happyhorse-1.0-video-edit', label: 'happyhorse-1.0-video-edit' },
+        { value: 'happyhorse-1.0-video-edit', label: 'happyhorse-1.0-video-edit', formType: 'edit' },
       ],
     },
   ],
@@ -55,17 +62,17 @@ export const MODEL_GROUPS: Record<Category, ModelSubType[]> = {
       type: 't2i',
       label: '文生图',
       models: [
-        { value: 'qwen-image-2.0-pro', label: 'Qwen-Image 2.0 Pro（推荐）' },
-        { value: 'qwen-image-2.0', label: 'Qwen-Image 2.0（加速版）' },
-        { value: 'qwen-image-max', label: 'Qwen-Image Max' },
-        { value: 'qwen-image-plus', label: 'Qwen-Image Plus' },
+        { value: 'qwen-image-2.0-pro', label: 'Qwen-Image 2.0 Pro（推荐）', formType: 't2i' },
+        { value: 'qwen-image-2.0', label: 'Qwen-Image 2.0（加速版）', formType: 't2i' },
+        { value: 'qwen-image-max', label: 'Qwen-Image Max', formType: 't2i' },
+        { value: 'qwen-image-plus', label: 'Qwen-Image Plus', formType: 't2i' },
       ],
     },
     // 后续可在此添加「图生图」等子类型
   ],
 }
 
-export type ModelType = 't2v' | 'i2v' | 'r2v' | 'edit' | 't2i'
+export type ModelType = 't2v' | 'i2v' | 'r2v' | 'edit' | 't2i' | 'wan27-i2v'
 
 /** 2.0 系列支持的分辨率 */
 export const IMAGE_SIZES_V2 = [
@@ -88,5 +95,6 @@ export const IMAGE_SIZES_LEGACY = [
 export const RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '4:5', '5:4', '9:21', '21:9'] as const
 export const RESOLUTIONS = ['720P', '1080P'] as const
 export const DURATIONS = [3, 5, 8, 10, 15] as const
+export const WAN27_DURATIONS = [2, 3, 5, 8, 10, 15] as const
 export const EDIT_MAX_IMAGES = 5
 export const R2V_MAX_IMAGES = 9

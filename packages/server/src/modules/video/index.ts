@@ -38,6 +38,7 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
       const isI2v = model === 'happyhorse-1.0-i2v'
       const isR2v = model === 'happyhorse-1.0-r2v'
       const isVideoEdit = model === 'happyhorse-1.0-video-edit'
+      const isWan27 = model === 'wan2.7-i2v-2026-04-25'
 
       // 各模型必填字段校验
       if (isI2v && !b.imageUrl) {
@@ -51,6 +52,10 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
       if (isVideoEdit && !b.videoUrl) {
         set.status = 400
         return { error: 'videoUrl is required for video-edit model' }
+      }
+      if (isWan27 && !b.imageUrl && !b.firstClipUrl) {
+        set.status = 400
+        return { error: 'imageUrl or firstClipUrl is required for wan2.7-i2v model' }
       }
 
       // imageUrls 数量校验

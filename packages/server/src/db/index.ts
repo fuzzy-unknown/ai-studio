@@ -102,6 +102,9 @@ if (existingPricing.cnt === 0) {
     insert.run(model, '720P', 0.9, 1.0)
     insert.run(model, '1080P', 1.6, 1.0)
   }
+  // 万相2.7 图生视频定价（元/秒）
+  insert.run('wan2.7-i2v-2026-04-25', '720P', 0.6, 1.0)
+  insert.run('wan2.7-i2v-2026-04-25', '1080P', 1.0, 1.0)
   // 千问文生图模型定价（元/张）
   const imageModels = [
     'qwen-image-2.0-pro',
