@@ -330,10 +330,11 @@ export abstract class VideoService {
         // 使用 DB 中已存储的 cost，与 TaskCard 显示一致
         totalCost += task.cost
         taskCount++
-        // duration 从 usage 中提取
+        // duration 从 usage 中提取（图片任务没有 duration，安全跳过）
         if (task.usage) {
-          const usage = JSON.parse(task.usage) as UsageData
-          totalDuration += usage.duration
+          const usage = JSON.parse(task.usage) as any
+          if (typeof usage.duration === 'number')
+            totalDuration += usage.duration
         }
       }
     }

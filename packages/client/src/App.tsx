@@ -74,10 +74,38 @@ export default function App() {
     }
   }, [fetchTasks, fetchStats]), taskModels)
 
-  const handleGenerate = async (data: { prompt: string, model: string, imageUrl?: string, imageUrls?: string[], videoUrl?: string, resolution: string, ratio?: string, duration?: number, watermark?: boolean, audioSetting?: string, seed?: number, size?: string, negativePrompt?: string, n?: number, promptExtend?: boolean }) => {
+  const handleGenerate = async (data: { prompt: string, model: string, imageUrl?: string, imageUrls?: string[], videoUrl?: string, resolution: string, ratio?: string, duration?: number, watermark?: boolean, audioSetting?: string, seed?: number, size?: string, negativePrompt?: string, n?: number, promptExtend?: boolean, lastFrameUrl?: string, drivingAudioUrl?: string, firstClipUrl?: string }) => {
     setLoading(true)
+
+    // 立即在列表顶部插入一个临时任务卡片，给用户即时反馈
+    const optimisticId = `temp-${Date.now()}`
+    const isImageModel = data.model.startsWith('qwen-image')
+    setTasks(prev => [{
+      id: -1,
+      taskId: optimisticId,
+      model: data.model,
+      prompt: data.prompt,
+      status: 'PENDING',
+      resolution: data.resolution || null,
+      ratio: data.ratio || null,
+      duration: data.duration || null,
+      inputVideoUrl: data.videoUrl || null,
+      inputImageUrl: data.imageUrl || (data.imageUrls ? JSON.stringify(data.imageUrls) : null),
+      videoUrl: null,
+      localPath: null,
+      usage: null,
+      cost: null,
+      errorMessage: null,
+      createdAt: new Date().toLocaleString(),
+      updatedAt: null,
+      size: data.size || null,
+      negativePrompt: data.negativePrompt || null,
+      n: data.n || null,
+      promptExtend: data.promptExtend ? 1 : 0,
+      requestId: null,
+    } as Task, ...prev])
+
     try {
-      const isImageModel = data.model.startsWith('qwen-image')
       const endpoint = isImageModel ? '/api/image/generate' : '/api/video/generate'
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -85,10 +113,16 @@ export default function App() {
         body: JSON.stringify(data),
       })
       const result = await res.json()
+      // 移除临时卡片，刷新真实数据
+      setTasks(prev => prev.filter(t => t.taskId !== optimisticId))
       if (result.task_id) {
         await fetchTasks()
         fetchStats()
       }
+    }
+    catch {
+      // 请求失败也移除临时卡片
+      setTasks(prev => prev.filter(t => t.taskId !== optimisticId))
     }
     finally {
       setLoading(false)
