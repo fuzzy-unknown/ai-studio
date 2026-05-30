@@ -40,8 +40,9 @@ export default function App() {
     fetchStats()
   }, [fetchTasks, fetchStats])
 
+  // 只监控真实任务（排除 temp- 前缀的乐观更新卡片）
   const watchingIds = useMemo(
-    () => tasks.filter(t => IN_PROGRESS.has(t.status)).map(t => t.taskId),
+    () => tasks.filter(t => IN_PROGRESS.has(t.status) && !t.taskId.startsWith('temp-')).map(t => t.taskId),
     [tasks],
   )
 
