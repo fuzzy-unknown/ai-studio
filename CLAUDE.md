@@ -68,7 +68,11 @@ All service classes use **static methods** (not instance-based).
 
 **Storage**: Videos downloaded to `storage/videos/`, images to `storage/images/` (utilities in `src/utils/storage.ts`, uses `Bun.write()`).
 
-**Logging**: Pino with dual output (stdout + daily-rotating log files in `logs/YYYY/MM/HH.log`), configurable via `LOG_LEVEL` env var.
+**Logging**: Pino with dual output (stdout + daily-rotating log files in `logs/YYYY/MM/DD/HH.log`), configurable via `LOG_LEVEL` env var.
+
+**API docs**: `@elysia/openapi` exposes interactive docs at `/openapi` and JSON spec at `/openapi/json`. Comprehensive Chinese-language endpoint reference in `packages/server/docs/API.md`.
+
+**Model listing**: `GET /api/models` returns all model definitions with capabilities and defaults (from the task module).
 
 ### Client (`packages/client/`)
 
@@ -90,6 +94,8 @@ All service classes use **static methods** (not instance-based).
 **Task display**: `TaskCard` detects model type by prefix. `ImageResult` sub-component parses JSON arrays from `videoUrl`/`localPath` for multi-image grids. `getVideoSrc` routes to `/api/image/files/` or `/api/video/files/` based on model prefix.
 
 **Real-time**: `useTaskWatcher` hook maintains a `Map<string, EventSource>` for active SSE connections with exponential backoff retry. Routes each task to the correct module endpoint based on model prefix (`qwen-image-*` → `/api/image`, otherwise `/api/video`).
+
+**Utilities**: `utils/fileToBase64.ts` converts `File` objects to base64 strings for image upload in forms.
 
 ### Supported Models (13 total)
 

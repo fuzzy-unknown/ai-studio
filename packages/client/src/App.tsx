@@ -91,12 +91,6 @@ export default function App() {
     [tasks],
   )
 
-  // 构建 taskId → model 映射，供 SSE 选择正确端点
-  const taskModels = useMemo(
-    () => new Map(tasks.map(t => [t.taskId, t.model ?? ''])),
-    [tasks],
-  )
-
   useTaskWatcher(watchingIds, useCallback((taskId: string, event: any) => {
     setTasks(prev => prev.map(t =>
       t.taskId === taskId
@@ -107,7 +101,7 @@ export default function App() {
       fetchTasks()
       fetchStats()
     }
-  }, [fetchTasks, fetchStats]), taskModels)
+  }, [fetchTasks, fetchStats]))
 
   const handleGenerate = async (data: GenerateFormData) => {
     setLoading(true)

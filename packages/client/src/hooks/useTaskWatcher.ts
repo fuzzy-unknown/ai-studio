@@ -7,17 +7,20 @@ interface TaskEvent {
 }
 
 const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED', 'DONE', 'ERROR'])
+const POLL_INTERVAL = 2000
 const MAX_RETRIES = 3
 
 export function useTaskWatcher(
   taskIds: string[],
   onUpdate: (taskId: string, event: TaskEvent) => void,
-  /** taskId → model 映射，用于选择 SSE 端点 */
-  taskModels?: Map<string, string>,
+  /** 保留接口兼容，不再使用 */
+  _taskModels?: Map<string, string>,
 ) {
-  const connectionsRef = useRef<Map<string, EventSource>>(new Map())
+  // 每个 task 的上一次 status，用于去重
+  const lastStatusRef = useRef<Map<string, string>>(new Map())
   const retryCountRef = useRef<Map<string, number>>(new Map())
   const retryTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const pollTimerRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
   const onUpdateRef = useRef(onUpdate)
   onUpdateRef.current = onUpdate
 
@@ -30,9 +33,10 @@ export function useTaskWatcher(
       return
     prevKeyRef.current = key
 
-    const current = connectionsRef.current
+    const lastStatus = lastStatusRef.current
     const retries = retryCountRef.current
     const retryTimers = retryTimerRef.current
+    const pollTimers = pollTimerRef.current
     const activeIds = new Set(taskIds)
 
     const clearRetryTimer = (id: string) => {
@@ -43,95 +47,96 @@ export function useTaskWatcher(
       }
     }
 
-    const closeConnection = (id: string) => {
-      current.get(id)?.close()
-      current.delete(id)
+    const stopPolling = (id: string) => {
+      const timer = pollTimers.get(id)
+      if (timer) {
+        clearInterval(timer)
+        pollTimers.delete(id)
+      }
+      lastStatus.delete(id)
       retries.delete(id)
       clearRetryTimer(id)
     }
 
-    const connect = (id: string) => {
-      const endpoint = `/api/tasks/${id}/events`
-      const es = new EventSource(endpoint)
-      current.set(id, es)
+    const pollTask = async (id: string) => {
+      try {
+        const res = await fetch(`/api/tasks/${id}`)
+        if (!res.ok)
+          throw new Error(`HTTP ${res.status}`)
 
-      es.onmessage = (e) => {
-        const data = JSON.parse(e.data) as TaskEvent
-        if (data.status !== 'DONE') {
-          // DONE 是 SSE 流关闭信号，不是任务状态，不应写入任务数据
-          onUpdateRef.current(id, data)
+        const task = await res.json() as any
+        const newStatus = task.status as string
+        const prevStatus = lastStatus.get(id)
+
+        // 状态变化时才触发回调
+        if (newStatus !== prevStatus) {
+          lastStatus.set(id, newStatus)
+          onUpdateRef.current(id, {
+            status: newStatus,
+            video_url: task.videoUrl || null,
+            error: task.errorMessage || null,
+          })
         }
-        if (TERMINAL.has(data.status))
-          closeConnection(id)
+
+        // 终态停止轮询
+        if (TERMINAL.has(newStatus)) {
+          stopPolling(id)
+        }
+
+        // 成功一次就重置重试计数
+        retries.set(id, 0)
       }
-
-      es.onerror = () => {
+      catch {
         const retryCount = retries.get(id) ?? 0
-        current.get(id)?.close()
-        current.delete(id)
-
         if (retryCount < MAX_RETRIES) {
-          // 指数退避重连：1s, 2s, 4s
           retries.set(id, retryCount + 1)
-          const delay = 2 ** retryCount * 1000
-          const timer = setTimeout(() => {
-            retryTimers.delete(id)
-            if (!current.has(id) && activeIds.has(id))
-              connect(id)
-          }, delay)
-          retryTimers.set(id, timer)
         }
         else {
-          // 超过重试次数，兜底：直接从服务端拉最新状态
-          retries.delete(id)
-          clearRetryTimer(id)
-          fetch(`/api/tasks/${id}`)
-            .then(r => r.json())
-            .then((task: any) => {
-              onUpdateRef.current(id, {
-                status: task.status,
-                video_url: task.videoUrl || null,
-                error: task.errorMessage || null,
-              })
-            })
-            .catch(() => {})
+          // 超过重试次数，停止轮询
+          stopPolling(id)
         }
       }
     }
 
-    // 关闭不再需要的 SSE
-    for (const [id, es] of current) {
-      if (!activeIds.has(id)) {
-        es.close()
-        current.delete(id)
-        retries.delete(id)
-        clearRetryTimer(id)
-      }
+    const startPolling = (id: string) => {
+      // 立即查一次
+      pollTask(id)
+      // 然后每 2 秒轮询
+      const timer = setInterval(pollTask, POLL_INTERVAL, id)
+      pollTimers.set(id, timer)
     }
 
-    // 为新的 taskId 建立 SSE（统一端点）
+    // 停止不再需要的轮询
+    for (const id of pollTimers.keys()) {
+      if (!activeIds.has(id))
+        stopPolling(id)
+    }
+
+    // 为新的 taskId 启动轮询
     for (const id of taskIds) {
-      if (current.has(id))
+      if (pollTimers.has(id))
         continue
 
       retries.set(id, 0)
       clearRetryTimer(id)
-      connect(id)
+      startPolling(id)
     }
-  }, [taskIds, taskModels])
+  }, [taskIds])
 
-  // 组件卸载时清理所有连接
+  // 组件卸载时清理所有轮询
   useEffect(() => {
-    const current = connectionsRef.current
+    const pollTimers = pollTimerRef.current
     const retryTimers = retryTimerRef.current
+    const lastStatus = lastStatusRef.current
     const retries = retryCountRef.current
     return () => {
-      for (const es of current.values())
-        es.close()
-      current.clear()
+      for (const timer of pollTimers.values())
+        clearInterval(timer)
+      pollTimers.clear()
       for (const timer of retryTimers.values())
         clearTimeout(timer)
       retryTimers.clear()
+      lastStatus.clear()
       retries.clear()
     }
   }, [])

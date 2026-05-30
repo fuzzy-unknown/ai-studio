@@ -218,51 +218,30 @@ export abstract class ImageService {
     logger.info({ model, sync }, '[ImageService] createTask called')
 
     if (sync) {
-      // 同步模式：直接拿到结果
-      const result = await callDashScopeSync(params)
-
-      const cost = await calculateImageCost(model, result.imageCount)
-
-      // 生成一个本地 taskId
+      // 同步模式：立即返回 taskId，后台执行生成和下载（SSE 推送状态变更）
       const localTaskId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-      // 下载所有图片到本地
-      const localPaths: string[] = []
-      for (let i = 0; i < result.imageUrls.length; i++) {
-        const suffix = result.imageUrls.length > 1 ? `_${i}` : ''
-        try {
-          const path = await downloadImage(result.imageUrls[i], `${localTaskId}${suffix}`)
-          localPaths.push(path)
-        }
-        catch (err) {
-          logger.error({ taskId: localTaskId, index: i, error: (err as Error).message }, '[ImageService] Failed to download image')
-        }
-      }
-
-      // videoUrl/localPath 统一存 JSON 数组
-      const videoUrl = JSON.stringify(result.imageUrls)
-      const localPath = localPaths.length > 0 ? JSON.stringify(localPaths) : null
-
+      // 先插入 RUNNING 状态的记录，让 SSE 能立即追踪
       await db.insert(tasks).values({
         taskId: localTaskId,
         type: 'image',
         model,
         prompt: params.prompt,
-        status: 'SUCCEEDED',
+        status: 'RUNNING',
         resolution: params.size || null,
-        videoUrl,
-        localPath,
         inputImageUrl: serializeInputImages(params.imageUrls),
         size: params.size || null,
         negativePrompt: params.negativePrompt || null,
-        n: result.imageCount,
+        n: params.n || 1,
         promptExtend: params.promptExtend !== false ? 1 : 0,
-        requestId: result.requestId,
-        cost,
-        usage: JSON.stringify({ image_count: result.imageCount, width: result.width, height: result.height }),
       })
 
-      return { taskId: localTaskId, status: 'SUCCEEDED' }
+      // 后台执行生成和下载
+      ImageService.processSyncTask(localTaskId, model, params).catch((err) => {
+        logger.error({ taskId: localTaskId, error: (err as Error).message }, '[ImageService] Background sync processing failed')
+      })
+
+      return { taskId: localTaskId, status: 'RUNNING' }
     }
     else {
       // 异步模式：提交任务后轮询
@@ -334,12 +313,12 @@ export abstract class ImageService {
 
   static async downloadAndSaveImages(taskId: string, imageUrls: string[]): Promise<string | null> {
     try {
-      const localPaths: string[] = []
-      for (let i = 0; i < imageUrls.length; i++) {
-        const suffix = imageUrls.length > 1 ? `_${i}` : ''
-        const path = await downloadImage(imageUrls[i], `${taskId}${suffix}`)
-        localPaths.push(path)
-      }
+      const localPaths = await Promise.all(
+        imageUrls.map((url, i) => {
+          const suffix = imageUrls.length > 1 ? `_${i}` : ''
+          return downloadImage(url, `${taskId}${suffix}`)
+        }),
+      )
       const localPath = localPaths.length > 0 ? JSON.stringify(localPaths) : null
       await db
         .update(tasks)
@@ -361,6 +340,77 @@ export abstract class ImageService {
 
   static async getUsageStats(): Promise<{ totalDuration: number, totalCost: number, taskCount: number }> {
     return sharedGetUsageStats()
+  }
+
+  /**
+   * 后台处理同步图片生成任务：
+   * 调用 DashScope → 更新 DB（SSE 推送）→ 并行下载图片 → 更新 DB 为 SUCCEEDED
+   */
+  private static async processSyncTask(taskId: string, model: string, params: CreateImageTaskParams): Promise<void> {
+    logger.info({ taskId, model }, '[ImageService] Background sync processing started')
+
+    try {
+      // 1. 调用 DashScope 同步接口（耗时操作）
+      const result = await callDashScopeSync(params)
+
+      // 2. 更新 DB：写入 remote imageUrls（SSE 推送给客户端）
+      const cost = await calculateImageCost(model, result.imageCount)
+      const videoUrl = JSON.stringify(result.imageUrls)
+
+      await db
+        .update(tasks)
+        .set({
+          videoUrl,
+          requestId: result.requestId,
+          n: result.imageCount,
+          cost,
+          usage: JSON.stringify({ image_count: result.imageCount, width: result.width, height: result.height }),
+          updatedAt: sql`(datetime('now'))`,
+        })
+        .where(eq(tasks.taskId, taskId))
+
+      // 3. 并行下载图片到本地
+      const localPaths: string[] = []
+      const downloadResults = await Promise.allSettled(
+        result.imageUrls.map((url, i) => {
+          const suffix = result.imageUrls.length > 1 ? `_${i}` : ''
+          return downloadImage(url, `${taskId}${suffix}`)
+        }),
+      )
+      for (const r of downloadResults) {
+        if (r.status === 'fulfilled')
+          localPaths.push(r.value)
+        else
+          logger.error({ taskId, error: r.reason?.message }, '[ImageService] Failed to download image')
+      }
+
+      // 4. 更新 DB 为 SUCCEEDED（SSE 推送终态）
+      const localPath = localPaths.length > 0 ? JSON.stringify(localPaths) : null
+      await db
+        .update(tasks)
+        .set({
+          status: 'SUCCEEDED',
+          localPath,
+          updatedAt: sql`(datetime('now'))`,
+        })
+        .where(eq(tasks.taskId, taskId))
+
+      logger.info({ taskId, imageCount: result.imageCount }, '[ImageService] Background sync processing done')
+    }
+    catch (err) {
+      // 出错时标记任务为 FAILED
+      const message = (err as Error).message
+      logger.error({ taskId, error: message }, '[ImageService] Background sync processing failed')
+
+      await db
+        .update(tasks)
+        .set({
+          status: 'FAILED',
+          errorMessage: message,
+          updatedAt: sql`(datetime('now'))`,
+        })
+        .where(eq(tasks.taskId, taskId))
+    }
   }
 
   private static async pollUntilDone(taskId: string): Promise<void> {

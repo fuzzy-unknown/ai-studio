@@ -63,14 +63,14 @@ PENDING → RUNNING → SUCCEEDED
 ```
 
 - **终态**：`SUCCEEDED`、`FAILED`、`CANCELED`、`UNKNOWN` — 任务结束，不再变化
-- **非终态**：`PENDING`、`RUNNING` — 可通过 SSE 实时监听变化
+- **非终态**：`PENDING`、`RUNNING` — 可通过轮询 `GET /api/tasks/:taskId` 获取最新状态
 
 ### 模型调用模式
 
 | apiMode | 说明 | 返回时机 |
 |---------|------|---------|
-| `async` | 异步模型 | 立即返回 `task_id`，需通过 SSE/轮询获取结果 |
-| `sync` | 同步模型 | 请求阻塞直到生成完成，返回时 `status` 已为 `SUCCEEDED` |
+| `async` | 异步模型 | 立即返回 `task_id`，需通过轮询获取结果 |
+| `sync` | 同步模型 | 立即返回 `task_id`（`sync-` 前缀，状态 `RUNNING`），后台生成完成后通过轮询获取结果 |
 
 ---
 
@@ -144,7 +144,7 @@ curl http://localhost:4000/api/models
 
 ### POST `/api/video/generate`
 
-创建视频生成任务。所有视频模型均为 `async`，提交后需通过 SSE 监听结果。
+创建视频生成任务。所有视频模型均为 `async`，提交后需通过轮询获取结果。
 
 **请求体**：
 
@@ -269,7 +269,7 @@ curl -X POST http://localhost:4000/api/video/generate \
 
 ### GET `/api/video/tasks/:taskId/events`
 
-订阅视频任务的 SSE 事件流。详见 [SSE 对接](#8-sse-事件流对接)。
+订阅视频任务的 SSE 事件流。详见 [SSE 事件流对接](#8-sse-事件流对接)。
 
 ### GET `/api/video/usage/stats`
 
@@ -291,10 +291,10 @@ interface UsageStatsResponse {
 
 ### POST `/api/image/generate`
 
-创建图片生成任务。
+创建图片生成任务。所有模型均立即返回 `task_id`，后台执行生成。
 
-- **同步模型**（`apiMode: "sync"`）：请求阻塞直到生成完成，返回时 `status` 为 `SUCCEEDED`，`task_id` 以 `sync-` 开头
-- **异步模型**（`apiMode: "async"`）：立即返回 `task_id`，需通过 SSE 监听结果
+- **同步模型**（`apiMode: "sync"`）：返回 `RUNNING` 状态，`task_id` 以 `sync-` 开头，后台调用 DashScope 同步接口生成并下载图片
+- **异步模型**（`apiMode: "async"`）：返回 `PENDING` 状态，后台轮询 DashScope 异步任务直到完成
 
 **请求体**：
 
@@ -334,7 +334,7 @@ interface ImageGenerateBody {
 ```typescript
 interface ImageGenerateResponse {
   task_id: string   // 同步模型: "sync-xxx"，异步模型: DashScope 任务 ID
-  status: string    // 同步模型: "SUCCEEDED"，异步模型: "PENDING"
+  status: string    // 同步模型: "RUNNING"，异步模型: "PENDING"
 }
 ```
 
@@ -362,12 +362,17 @@ interface ImageGenerateResponse {
 ### 示例
 
 ```bash
-# 文生图（同步，阻塞返回）
+# 文生图（同步模型，立即返回 RUNNING）
 curl -X POST http://localhost:4000/api/image/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt":"一只可爱的猫咪","model":"qwen-image-2.0-pro","size":"1024*1024"}'
+# → { "task_id": "sync-1780170051-abc123", "status": "RUNNING" }
 
-# 图片编辑（同步）
+# 轮询获取结果
+curl http://localhost:4000/api/tasks/sync-1780170051-abc123
+# → { "taskId": "sync-1780170051-abc123", "status": "SUCCEEDED", "videoUrl": "[...]", "localPath": "[...]", ... }
+
+# 图片编辑
 curl -X POST http://localhost:4000/api/image/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt":"将背景改为海边","model":"qwen-image-edit-max","imageUrls":["https://example.com/cat.jpg"]}'
@@ -395,7 +400,7 @@ curl -X POST http://localhost:4000/api/image/generate \
 
 ### GET `/api/image/tasks/:taskId/events`
 
-订阅图片任务的 SSE 事件流。详见 [SSE 对接](#8-sse-事件流对接)。
+订阅图片任务的 SSE 事件流。详见 [SSE 事件流对接](#8-sse-事件流对接)。
 
 ### GET `/api/image/usage/stats`
 
@@ -619,11 +624,46 @@ function getFileUrl(task: TaskResponse): string | null {
 
 ---
 
-## 8. SSE 事件流对接
+## 8. 任务状态轮询（推荐） & SSE 事件流（备选）
 
-SSE 端点用于实时监听任务状态变化，推荐使用 `EventSource` API。
+### 轮询方式（推荐）
 
-### 端点
+所有模型提交后均立即返回 `task_id`，通过轮询 `GET /api/tasks/:taskId` 获取最新状态。
+
+**推荐轮询间隔**：2 秒
+
+**轮询终止条件**：`status` 为以下终态之一时停止轮询：
+
+- `SUCCEEDED` — 生成成功
+- `FAILED` — 生成失败（查看 `errorMessage` 字段）
+- `CANCELED` — 已取消
+- `UNKNOWN` — 未知状态
+
+**对接示例**：
+
+```typescript
+const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
+
+async function pollTask(taskId: string, onUpdate: (task: TaskResponse) => void): Promise<void> {
+  while (true) {
+    const res = await fetch(`/api/tasks/${taskId}`)
+    const task: TaskResponse = await res.json()
+
+    onUpdate(task)
+
+    if (TERMINAL.has(task.status))
+      return
+
+    await new Promise(r => setTimeout(r, 2000)) // 2 秒后再次查询
+  }
+}
+```
+
+### SSE 事件流（备选）
+
+SSE 端点仍可用，适用于需要长连接推送的场景。
+
+#### 端点
 
 | 端点 | 适用场景 |
 |------|---------|
@@ -631,37 +671,7 @@ SSE 端点用于实时监听任务状态变化，推荐使用 `EventSource` API�
 | `GET /api/video/tasks/:taskId/events` | 视频任务专用 |
 | `GET /api/image/tasks/:taskId/events` | 图片任务专用 |
 
-### 前端对接示例
-
-```typescript
-function watchTask(taskId: string, onUpdate: (data: SSEEvent) => void): EventSource {
-  const es = new EventSource(`/api/tasks/${taskId}/events`)
-
-  es.onmessage = (event) => {
-    const data: SSEEvent = JSON.parse(event.data)
-
-    if (data.status === 'DONE') {
-      es.close()
-      return
-    }
-
-    onUpdate(data)
-
-    // 终态自动关闭
-    if (['SUCCEEDED', 'FAILED', 'CANCELED', 'UNKNOWN'].includes(data.status)) {
-      es.close()
-    }
-  }
-
-  es.onerror = () => {
-    es.close()
-  }
-
-  return es
-}
-```
-
-### 事件数据格式
+#### 事件数据格式
 
 ```typescript
 interface SSEEvent {
@@ -671,7 +681,7 @@ interface SSEEvent {
 }
 ```
 
-### SSE 行为说明
+#### SSE 行为说明
 
 - 每 2 秒轮询数据库检测状态变化
 - 仅在状态变化时推送事件
@@ -783,10 +793,10 @@ function getGenerateEndpoint(model: string): string {
 
 ```
 1. GET  /api/models                    → 获取模型列表，展示给用户选择
-2. POST /api/video/generate            → 用户提交生成请求
+2. POST /api/video/generate            → 用户提交生成请求（立即返回 task_id）
        或 /api/image/generate
-3. GET  /api/tasks/:taskId/events      → 建立 SSE 连接，实时监听进度
-4. （SSE 推送 SUCCEEDED）               → 生成完成
+3. GET  /api/tasks/:taskId             → 轮询任务状态（每 2 秒）
+4. （status 变为 SUCCEEDED）            → 生成完成
 5. GET  /api/video/files/:filename     → 获取结果文件
        或 /api/image/files/:filename
 ```

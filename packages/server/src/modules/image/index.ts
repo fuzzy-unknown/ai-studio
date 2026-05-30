@@ -56,7 +56,7 @@ export const imageModule = new Elysia({ prefix: '/api/image', name: 'module:imag
     },
     detail: {
       summary: '创建图片生成任务',
-      description: '提交图片生成请求，支持文生图和图生图（图片编辑）模式。\n\n- 同步模型（2.0 系列、edit 系列）：请求阻塞直到生成完成，返回带 `sync-` 前缀的 task_id\n- 异步模型（max / plus）：提交后立即返回 task_id，通过 SSE 或轮询获取结果\n- 默认模型为 `qwen-image-2.0-pro`',
+      description: '提交图片生成请求，支持文生图和图生图（图片编辑）模式。\n\n- 所有模型均立即返回 task_id（状态为 RUNNING 或 PENDING），通过 SSE 或轮询获取结果\n- 同步模型（2.0 系列、edit 系列）返回带 `sync-` 前缀的 task_id，后台生成完成后自动推送\n- 异步模型（max / plus）提交后返回 DashScope task_id\n- 默认模型为 `qwen-image-2.0-pro`',
     },
   })
   .get('/tasks', () => ImageService.getAllTasks(), {
