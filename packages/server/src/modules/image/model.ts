@@ -9,6 +9,8 @@ export const ImageGenerateBody = t.Object({
   promptExtend: t.Optional(t.Boolean()),
   watermark: t.Optional(t.Boolean()),
   seed: t.Optional(t.Integer({ minimum: 0, maximum: 2147483647, error: 'seed must be 0-2147483647' })),
+  // 图像编辑：输入图片 URL
+  imageUrls: t.Optional(t.Array(t.String())),
 })
 
 export const ImageGenerateResponse = t.Object({

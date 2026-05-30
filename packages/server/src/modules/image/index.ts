@@ -36,11 +36,22 @@ export const imageModule = new Elysia({ prefix: '/api/image', name: 'module:imag
       const isQwenImage = model.startsWith('qwen-image-2.0')
         || model.startsWith('qwen-image-max')
         || model.startsWith('qwen-image-plus')
+        || model.startsWith('qwen-image-edit')
         || model === 'qwen-image'
 
       if (!isQwenImage) {
         set.status = 400
         return { error: `Invalid model: ${model}. Must be a qwen-image model.` }
+      }
+
+      // 编辑模型需要至少 1 张输入图片
+      if (model.startsWith('qwen-image-edit') && (!b.imageUrls || b.imageUrls.length === 0)) {
+        set.status = 400
+        return { error: 'imageUrls is required for image edit models (1-3 images)' }
+      }
+      if (b.imageUrls && b.imageUrls.length > 3) {
+        set.status = 400
+        return { error: 'imageUrls must contain 1-3 images' }
       }
     },
   })

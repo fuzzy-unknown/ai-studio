@@ -122,6 +122,20 @@ if (existingPricing.cnt === 0) {
     for (const [size, price] of imagePricing[model])
       insert.run(model, size, price, 1.0)
   }
+  // 千问图像编辑模型定价（元/张）
+  const editModels = [
+    'qwen-image-edit-max',
+    'qwen-image-edit-plus',
+    'qwen-image-edit',
+  ]
+  const editPricing: Record<string, number> = {
+    'qwen-image-edit-max': 0.5,
+    'qwen-image-edit-plus': 0.2,
+    'qwen-image-edit': 0.3,
+  }
+  for (const model of editModels) {
+    insert.run(model, '1024*1024', editPricing[model], 1.0)
+  }
 }
 
 export const db = drizzle(sqlite, { schema })

@@ -68,11 +68,21 @@ export const MODEL_GROUPS: Record<Category, ModelSubType[]> = {
         { value: 'qwen-image-plus', label: 'Qwen-Image Plus', formType: 't2i' },
       ],
     },
-    // 后续可在此添加「图生图」等子类型
+    {
+      type: 'i2i',
+      label: '图生图',
+      models: [
+        { value: 'qwen-image-2.0-pro', label: 'Qwen-Image 2.0 Pro（推荐）', formType: 'i2i' },
+        { value: 'qwen-image-2.0', label: 'Qwen-Image 2.0（加速版）', formType: 'i2i' },
+        { value: 'qwen-image-edit-max', label: 'Qwen-Image Edit Max', formType: 'i2i' },
+        { value: 'qwen-image-edit-plus', label: 'Qwen-Image Edit Plus', formType: 'i2i' },
+        { value: 'qwen-image-edit', label: 'Qwen-Image Edit', formType: 'i2i' },
+      ],
+    },
   ],
 }
 
-export type ModelType = 't2v' | 'i2v' | 'r2v' | 'edit' | 't2i' | 'wan27-i2v'
+export type ModelType = 't2v' | 'i2v' | 'r2v' | 'edit' | 't2i' | 'i2i' | 'wan27-i2v'
 
 /** 2.0 系列支持的分辨率 */
 export const IMAGE_SIZES_V2 = [

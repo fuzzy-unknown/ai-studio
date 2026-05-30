@@ -7,6 +7,7 @@ import { HappyHorseI2vForm } from './forms/HappyHorseI2vForm'
 import { HappyHorseR2vForm } from './forms/HappyHorseR2vForm'
 import { HappyHorseT2vForm } from './forms/HappyHorseT2vForm'
 import { Wan27I2vForm } from './forms/Wan27I2vForm'
+import { QwenImageEditForm } from './forms/QwenImageEditForm'
 import { QwenImageForm } from './forms/QwenImageForm'
 
 interface Props {
@@ -90,6 +91,7 @@ export function GenerateForm({ onSubmit, loading }: Props) {
       {formType === 'r2v' && <HappyHorseR2vForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
       {formType === 'edit' && <HappyHorseEditForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
       {formType === 't2i' && <QwenImageForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
+      {formType === 'i2i' && <QwenImageEditForm key={currentModel.value} model={currentModel.value} loading={loading} onSubmit={onSubmit} />}
     </form>
   )
 }

@@ -23,10 +23,17 @@ const MODEL_LABELS: Record<string, string> = {
   'qwen-image-2.0': '文生图 2.0',
   'qwen-image-max': '文生图 Max',
   'qwen-image-plus': '文生图 Plus',
+  'qwen-image-edit-max': '图生图 Edit Max',
+  'qwen-image-edit-plus': '图生图 Edit Plus',
+  'qwen-image-edit': '图生图 Edit',
 }
 
 function isImageModel(model: string | null): boolean {
   return !!model?.startsWith('qwen-image')
+}
+
+function isImageEditModel(model: string | null): boolean {
+  return !!model?.startsWith('qwen-image-edit')
 }
 
 function isI2v(model: string | null): boolean {
@@ -56,6 +63,15 @@ function getRefImages(task: Task): string[] {
         return parsed.filter((url: string) => !isAudioUrl(url))
     }
     catch {}
+  }
+  if (isImageEditModel(task.model)) {
+    try {
+      const parsed = JSON.parse(task.inputImageUrl)
+      if (Array.isArray(parsed))
+        return parsed
+    }
+    catch {}
+    return [task.inputImageUrl]
   }
   if (isR2v(task.model) || isVideoEdit(task.model)) {
     try {
@@ -109,13 +125,14 @@ function TaskMeta({ task }: Props) {
 function TaskMedia({ task }: Props) {
   const refImages = getRefImages(task)
   const wan27 = isWan27I2v(task.model)
+  const edit = isImageEditModel(task.model)
   const hasVideo = (isVideoEdit(task.model) && !!task.inputVideoUrl) || (wan27 && refImages.some(url => isVideoUrl(url)))
   const hasImages = refImages.length > 0 && (wan27 ? refImages.some(url => !isVideoUrl(url)) : true)
 
   if (!hasVideo && !hasImages)
     return null
 
-  const imgLabel = isI2v(task.model) ? '首帧' : '参考图'
+  const imgLabel = edit ? '输入图' : isI2v(task.model) ? '首帧' : '参考图'
   const imagesOnly = wan27 ? refImages.filter(url => !isVideoUrl(url)) : refImages
   const videoUrls = wan27 ? refImages.filter(url => isVideoUrl(url)) : []
 
@@ -151,13 +168,13 @@ function TaskMedia({ task }: Props) {
       ))}
       {hasImages && imagesOnly.length === 1 && !hasVideo && (
         <div className="task-media-item">
-          <img src={imagesOnly[0]} alt={wan27 ? '首帧' : imgLabel} />
-          <span className="task-ref-label">{wan27 ? '首帧' : imgLabel}</span>
+          <img src={imagesOnly[0]} alt={imgLabel} />
+          <span className="task-ref-label">{imgLabel}</span>
         </div>
       )}
       {hasImages && (imagesOnly.length > 1 || hasVideo) && imagesOnly.map((url, i) => (
         <div key={url.slice(0, 30) + i} className="task-media-item">
-          <img src={url} alt={`参考图 ${i + 1}`} />
+          <img src={url} alt={`${imgLabel} ${i + 1}`} />
           <span className="task-ref-label">
             {wan27 ? (i === 0 ? '首帧' : '尾帧') : `${imgLabel} ${i + 1}`}
           </span>

@@ -11,13 +11,28 @@ const BASE_URL = 'https://dashscope.aliyuncs.com/api/v1'
 const TERMINAL_STATES = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
 
 const SYNC_MODELS = new Set(['qwen-image-2.0-pro', 'qwen-image-2.0'])
+const EDIT_MODELS = new Set(['qwen-image-edit-max', 'qwen-image-edit-plus', 'qwen-image-edit'])
 
-/** 判断是否为同步模型（2.0 系列，包括带日期后缀的快照版本） */
+/** 判断是否为同步模型（2.0 系列 + 编辑模型，包括带日期后缀的快照版本） */
 function isSyncModel(model: string): boolean {
-  if (SYNC_MODELS.has(model))
+  if (SYNC_MODELS.has(model) || EDIT_MODELS.has(model))
     return true
   // 2.0 系列的日期快照版本也是同步接口
-  return model.startsWith('qwen-image-2.0-pro-') || model.startsWith('qwen-image-2.0-')
+  if (model.startsWith('qwen-image-2.0-pro-') || model.startsWith('qwen-image-2.0-'))
+    return true
+  // 编辑模型的日期快照版本
+  if (model.startsWith('qwen-image-edit-max-') || model.startsWith('qwen-image-edit-plus-'))
+    return true
+  return false
+}
+
+/** 判断是否为编辑模型（需要输入图片） */
+function isEditModel(model: string): boolean {
+  if (EDIT_MODELS.has(model))
+    return true
+  if (model.startsWith('qwen-image-edit-max-') || model.startsWith('qwen-image-edit-plus-'))
+    return true
+  return false
 }
 
 const ERROR_CODE_MAP: Record<string, string> = {
@@ -56,6 +71,8 @@ interface CreateImageTaskParams {
   promptExtend?: boolean
   watermark?: boolean
   seed?: number
+  // 图像编辑：输入图片 URL（1-3 张）
+  imageUrls?: string[]
 }
 
 // ---- DashScope sync call (qwen-image-2.0 series) ----
@@ -68,6 +85,15 @@ async function callDashScopeSync(params: CreateImageTaskParams): Promise<{
   requestId: string
 }> {
   const model = params.model || 'qwen-image-2.0-pro'
+  const edit = isEditModel(model) || (params.imageUrls && params.imageUrls.length > 0)
+
+  // 构建 content 数组：编辑模式先放图片再放文字
+  const content: any[] = []
+  if (edit && params.imageUrls) {
+    for (const url of params.imageUrls)
+      content.push({ image: url })
+  }
+  content.push({ text: params.prompt })
 
   const body: any = {
     model,
@@ -75,7 +101,7 @@ async function callDashScopeSync(params: CreateImageTaskParams): Promise<{
       messages: [
         {
           role: 'user',
-          content: [{ text: params.prompt }],
+          content,
         },
       ],
     },
@@ -97,7 +123,7 @@ async function callDashScopeSync(params: CreateImageTaskParams): Promise<{
   if (params.seed !== undefined)
     body.parameters.seed = params.seed
 
-  logger.info({ model, promptLen: params.prompt.length }, '[DashScope-Image] Sync call')
+  logger.info({ model, promptLen: params.prompt.length, inputImages: params.imageUrls?.length || 0 }, '[DashScope-Image] Sync call')
 
   const res = await fetch(`${BASE_URL}/services/aigc/multimodal-generation/generation`, {
     method: 'POST',
@@ -271,6 +297,9 @@ export abstract class ImageService {
         resolution: params.size || null,
         videoUrl,
         localPath,
+        inputImageUrl: params.imageUrls && params.imageUrls.length > 0
+          ? (params.imageUrls.length === 1 ? params.imageUrls[0] : JSON.stringify(params.imageUrls))
+          : null,
         size: params.size || null,
         negativePrompt: params.negativePrompt || null,
         n: result.imageCount,
