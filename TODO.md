@@ -1,254 +1,221 @@
 # TODO.md
 
-> 项目全栈代码审查，按优先级分类。
+> 项目代码审查 v2 — 从最佳实践、功能完整度、过度设计警示角度出发。
+>
+> ⚠️ 标记为 **「不建议改」** 的条目是过度设计的陷阱——当前规模下改动收益 < 引入的复杂度。
 
 ---
 
-## 🔴 P0 — 必须修复（Bug / 数据正确性）
+## 🔴 必须修复 — 功能 Bug & 违反最佳实践
 
-### 1. `getPricePerSecond` 查询逻辑错误，视频任务 cost 可能为 0
+### 1. 💰 视频任务 cost 始终为 0（确认中的 P0）
 
-`pricing/service.ts` 的 `getPricePerSecond(model, sr)` 将 `sr`（数字）转成字符串后与 `resolution` 列比较，但 resolution 列存的是 `'720P'`/`'1080P'`，不是数字。查询永远匹配不到，返回 0。
+`pricing/service.ts:getPricePerSecond(model, sr)` 把数字 `sr`（如 `720`）转字符串后与 `resolution` 列（存 `'720P'`）比较，永远匹配不到，返回 0。所有视频任务的 `cost` 字段都是 0。
 
-**解决**: 查询前将 `sr` 转为 `720P`/`1080P` 格式，或改用 `model + resolution` 组合查询。
+**解决**: 查询前转换：`const resKey = sr <= 720 ? '720P' : '1080P'`。
 
-### 2. `calculateImageCost` 忽略 `size`，多尺寸模型计费不可预测
+### 2. 💰 图片计费忽略 `size`，可能算错钱
 
-`pricing/service.ts` 只按 `model` 查询，取第一条匹配行。如果同一模型有多种尺寸的定价行，结果取决于 SQLite 返回顺序。
+`calculateImageCost(model, imageCount)` 只按 `model` 查询取第一条。如果同一模型有多种尺寸定价，结果取决于 SQLite 返回顺序。
 
-**解决**: 查询时同时匹配 `model` 和 `resolution`（即图片的 size）。
+**解决**: 改为 `calculateImageCost(model, size, imageCount)`，同时匹配 `model + resolution`。
 
-### 3. `pollUntilDone` 无重试上限，可能无限循环
+### 3. ♻️ 无限轮询：`pollUntilDone` 没有退出条件
 
-`video/service.ts` 和 `image/service.ts` 的 `pollUntilDone` 都是 `while (true)` 无限循环。如果 DashScope 持续返回 `RUNNING`，服务端永远轮询。
+`while (true)` + `Bun.sleep(5000)`。如果 DashScope API 一直返回 `RUNNING`（遇到过这种情况），服务端内存泄漏 + CPU 浪费。
 
-**解决**: 增加最大轮询次数（如 360 次 × 5s = 30 分钟）或总超时时间。
+**解决**: 加计数器 `let ticks = 0; while (ticks++ < 360)` 或绝对时间超时。
 
-### 4. `QwenImageForm` 用 `useMemo` 执行副作用（重置 size/n）
+### 4. 🪝 React Hooks 误用：`useMemo` 做副作用
 
-`QwenImageForm.tsx` 在 `useMemo` 里调用 `setSize()`/`setN()`。React 文档明确 `useMemo` 不应有副作用。应改为 `useEffect`。
+`QwenImageForm.tsx:34-38` 用 `useMemo(() => { setSize(...); setN(...) }, [model])` 重置表单。React 18 的 Strict Mode 会执行两次 `useMemo`，导致状态被重置两次，且语义不对。
 
-**解决**: 将 `useMemo(() => { setSize(...); setN(...) }, [model])` 改为 `useEffect`。
+**解决**: 改为 `useEffect(() => { setSize(...); setN(...) }, [model])`。这是 React 最基本的规则之一。
 
-### 5. `Wan27I2vForm` 切换子任务模式时不重置媒体状态
+### 5. 🔄 乐观更新闪烁：任务消失再出现
 
-用户在「首帧生视频」填了首帧图片和音频，切换到「视频续写」后提交，旧的 `imageUrl`/`drivingAudioUrl` 仍会随请求发送。
+`App.tsx:118-120` 先 `filter` 移除临时卡片 → `await fetchTasks()` 拉取。中间有可见的空白帧，用户看到任务"消失再出现"。
 
-**解决**: 模式切换时 `setMode` 的回调中重置不相关的媒体字段。
+**解决**: 不要提前移除。让 `fetchTasks` 的结果直接 `setTasks` 覆盖整个列表（临时卡片的 `taskId` 不在真实数据中，自然被替换）。
 
-### 6. 乐观更新卡片消失→重现的闪烁
+### 6. 🎨 Wan27I2vForm 切换模式不重置旧字段
 
-`App.tsx` 先 `filter` 移除临时卡片，再 `await fetchTasks()` 拉取真实数据。两者之间有可见的空白间隙。
+在「首帧生视频」填了首帧图片，切到「视频续写」后提交 → `imageUrl` 随请求发出，服务端会认为这是一个首帧模式请求。
 
-**解决**: 不移除临时卡片，而是用 `fetchTasks` 返回的数据直接替换整个列表；或在移除的同时用 API 响应中的真实任务数据插入。
+**解决**: `setMode` 时同时重置 `imageUrl`、`lastFrameUrl`、`drivingAudioUrl`、`firstClipUrl`。
 
----
+### 7. ❌ 请求失败用户无任何提示
 
-## 🟠 P1 — 架构优化（DRY / 可维护性）
+`handleGenerate` 的 catch 只移除乐观卡片，用户不知道发生了什么。API 返回 400 错误码时也一样。
 
-### 7. video 和 image service 大量重复代码
+**解决**: 加一个 `const [error, setError] = useState<string | null>(null)`，失败时设置错误信息，在 UI 上展示。
 
-以下代码在两个 service 文件中几乎一字不差地重复：
+### 8. 📊 Stats 只查 video 端点，图片用户看到空统计
 
-| 重复项 | 文件 |
-|--------|------|
-| `ERROR_CODE_MAP` | video/service.ts, image/service.ts |
-| `translateError()` | 同上 |
-| `getApiKey()` | 同上 |
-| `TERMINAL_STATES` | 同上 |
-| `pollUntilDone()` | 同上（仅响应字段名不同） |
-| `getAllTasks()` / `getTaskByTaskId()` / `isTerminal()` | 同上 |
-| `getUsageStats()` | 同上 |
+`App.tsx:32` 写死 `/api/video/usage/stats`。如果只用过图片模型，统计栏永远是空的。
 
-**解决**: 提取 `src/utils/dashscope.ts` 共享模块，包含错误码映射、API Key 获取、终端状态判断、通用轮询逻辑。两个 service 继承或调用共享方法。
-
-### 8. SSE 端点实现完全重复
-
-`video/index.ts` 和 `image/index.ts` 的 `/tasks/:taskId/events` 路由实现几乎相同（ReadableStream + 轮询 + 状态变更检测）。
-
-**解决**: 提取 `createSSEStream(service, taskId)` 工厂函数。
-
-### 9. `downloadVideo` / `downloadImage` 结构相同
-
-`utils/storage.ts` 中两个函数仅目录和扩展名不同。
-
-**解决**: 合并为 `downloadMedia(url, taskId, { dir, ext })`。
-
-### 10. 客户端 `fileToBase64` 复制粘贴到 5 个表单文件
-
-**解决**: 提取到 `shared/fileToBase64.ts`。
-
-### 11. `TaskResponse` 和 `ImageTaskResponse` 95% 相同
-
-`video/model.ts` 和 `image/model.ts` 的响应类型几乎完全一样。
-
-**解决**: 提取共享的 `TaskResponse` 类型。
-
-### 12. CSS 中 4 组几乎相同的 Tab 样式
-
-`.filter-tab`、`.category-tab`、`.subtype-tab`、`.subtask-tab` 模式相同。
-
-**解决**: 提取 `.tab-group` / `.tab-item` 基础类，通过修饰类区分变体。
-
-### 13. 模型 ID 作为裸字符串散落在 7+ 个文件中
-
-无单一来源，添加新模型需改 5+ 文件，无编译时保障。
-
-**解决**: 服务端新增 `src/constants/models.ts`，集中定义所有模型 ID 及其属性。
+**解决**: `getUsageStats()` 已查询所有任务（包括图片），stats 应从任一端点获取即可。但当前 `fetchStats` 只调了 video 路由，而该路由的 `getUsageStats` 已涵盖所有模型的数据。验证一下 video 的 `getUsageStats` 确实遍历了所有 tasks → 是的，`db.select().from(tasks).all()` 取所有任务。所以只需确保 video 的 stats 端点不返回 NaN（已修复）。**当前实际是 OK 的**——只需确认 DB 里没残留 NaN cost。保留这条作为提醒。
 
 ---
 
-## 🟡 P2 — 命名 / 语义问题
+## 🟠 应该修复 — 最佳实践违反
 
-### 14. `videoUrl` DB 列存储图片 URL
+### 9. `as any` 到处都是（17+ 处）
 
-`tasks` 表的 `videoUrl` 列在图片任务中存图片 URL，`localPath` 同理。对维护者造成困惑。
+Elysia 的 `.model()` + `body:` 已经提供了类型安全的 body，但路由 handler 里全部 `body as any` 丢掉了。DashScope API 响应也全是 `res.json() as any`。
 
-**解决**: 长期方案是重命名为 `resultUrl` / `resultLocalPath`；短期可在 schema 注释中说明。
+**解决**: 不需要一步到位。分两步：
+1. 路由 handler 中用 Elysia 的类型推导（`{ body }` 已经有类型了，去掉 `as any`）
+2. DashScope 响应定义接口（`DashScopeCreateResult` 已有，扩展到 query 和 image 响应即可）
 
-### 15. `inputImageUrl` 存储格式不统一
+### 10. 空的 `catch {}` 吞掉所有错误
 
-- i2v：单个 URL 字符串
-- wan2.7：JSON 数组混合图片/音频/视频 URL
-- r2v/edit：JSON 数组（图片 URL）
-- 图生图：单个或 JSON 数组
+`App.tsx` 的 `fetchTasks` catch、`fetchStats` catch、`TaskCard` 的 JSON.parse catch。生产环境出错后用户看到空白页，开发者也无法排查。
 
-**解决**: 统一为 JSON 数组格式，增加 `inputMedia` 列替代，每项带 `{ type, url }` 结构。
+**解决**: 加 `console.error`。这是最低成本的改进。
 
-### 16. 函数命名不当
+### 11. SSE 的 `JSON.parse(e.data)` 未保护
 
-| 当前 | 问题 | 建议 |
-|------|------|------|
-| `getVideoSrc()` | 也返回图片 URL | `getResultSrc()` |
-| `r2v-thumb` CSS 类 | 被非 r2v 模型使用 | `media-thumb` |
-| `abstract class` | 只有 static 方法 | 改为普通导出函数或 plain class |
+`useTaskWatcher.ts:56` 直接 parse，服务端发畸形数据会崩溃断连。
 
-### 17. CLAUDE.md 缺少新增模型文档
+**解决**: 包一层 try-catch，解析失败时 `console.error` + 跳过该事件。
+
+### 12. `fetchTasks` 降级逻辑不检查 `fallback.ok`
+
+`App.tsx:24-25`: image 端点失败后降级到 video 端点，但不检查 video 响应的 `res.ok`。如果两个都挂了，`fallback.json()` 解析 HTML 5xx 页面会抛异常，被空 catch 吞掉。
+
+**解决**: `if (!fallback.ok) throw new Error('Failed to fetch tasks')`，让外层 catch 处理。
+
+### 13. `url.slice(0, 30) + i` 作 React key
+
+base64 data URL 的前 30 字符全部相同（`data:image/png;base64,`），key 退化为纯索引 `i`。图片增删时 React reconciliation 会出错，可能导致图片显示错乱。
+
+**解决**: 在状态中维护时用 index 做 key（因为数组本身就是稳定的），或给每个 URL 附带插入时的 `crypto.randomUUID()`。简单方案：直接用 `i` 做 key（因为当前场景中列表不会重排，只是在末尾追加）。
+
+### 14. `getUsageStats()` 查全表
+
+`db.select().from(tasks).all()` 每次调用都拉取全部任务到内存，然后 JS 层遍历计算。任务量增长后会变慢。
+
+**解决**: 用 SQL 聚合：`SELECT COUNT(*), SUM(cost) FROM tasks WHERE status = 'SUCCEEDED' AND cost IS NOT NULL`。一条 SQL 搞定，不需要加载全部数据到内存。
+
+### 15. 服务端重启后轮询丢失
+
+`pollUntilDone` 是 fire-and-forget Promise。服务重启后，所有 `RUNNING` 状态的任务永远卡住。
+
+**解决**: 在 `src/index.ts` 启动时扫描 `status IN ('PENDING', 'RUNNING')` 的任务，重新启动轮询。10 行代码即可。
+
+---
+
+## 🟡 可以改善 — 代码清晰度
+
+### 16. `handleGenerate` 参数类型内联了 20 个字段
+
+`App.tsx:78` 用了一个巨大的内联对象类型，和 `GenerateFormData` 几乎一样但不完全一样。以后改了 `GenerateFormData` 这里不会跟着变。
+
+**解决**: 直接用 `GenerateFormData` 类型。从 `types.ts` 导入即可。
+
+### 17. `videoUrl` 列存图片 URL
+
+`tasks` 表的 `videoUrl` 在图片任务中存图片结果，`localPath` 同理。对新人来说很困惑。
+
+**解决**: ⚠️ **不建议现在改**。重命名列需要写迁移脚本、改 service + client 多处代码，收益 < 成本。加一行注释即可：
+```ts
+videoUrl: text('video_url'), // 视频/图片结果的 URL（图片任务也用此字段）
+```
+
+### 18. `inputImageUrl` 存多种格式
+
+不同模型存不同格式（单 URL / JSON 数组 / 混合 media URL），客户端需要 try-catch 解析。
+
+**解决**: ⚠️ **不建议改为 `{ type, url }[]`**。这需要改 schema + 所有 service 的写入逻辑 + 客户端的读取逻辑，是大规模重构。当前统一先 `JSON.parse` + fallback 到单字符串的方案已经够用。**建议**: 统一所有写入为 JSON 数组格式（不区分模型），读取端只需一套逻辑。
+
+### 19. `abstract class` 只有 static 方法
+
+`VideoService`、`ImageService`、`PricingService` 都声明为 `abstract class` 但只有 static 方法。
+
+**解决**: ⚠️ **不建议改**。这是一种常见的"命名空间类"模式，在 TypeScript 中广泛使用（甚至 Node.js 的 `console` 也是这种模式）。改不改纯属风格偏好，改动收益为零。
+
+### 20. `fileToBase64` 复制到 5 个文件
+
+5 个表单组件都有相同的 `fileToBase64` 函数。
+
+**解决**: 提取到 `shared/fileToBase64.ts`。这是 **值得做** 的提取——3 行代码，没有复杂度增加，但有实际收益。
+
+### 21. CSS 有 4 组几乎相同的 Tab 样式
+
+`.filter-tab`、`.category-tab`、`.subtype-tab`、`.subtask-tab`。
+
+**解决**: ⚠️ **不建议抽象为通用组件**。这些 Tab 的间距、字号、圆角有细微差异，强行统一反而需要更多 CSS 变量。当前 CSS 总量很小（~600 行），重复不构成维护负担。**如果新增第 5 组时再考虑合并**。
+
+### 22. 模型 ID 散落在 7+ 文件
+
+**解决**: ⚠️ **不建议现在抽 `constants/models.ts`**。当前只有 13 个模型，每个文件的引用点都很少。抽象一个 central registry 的收益要在 20+ 模型时才能体现。**在添加下一个模型时顺便考虑**。
+
+### 23. 共享类型包 `packages/shared/`
+
+**解决**: ⚠️ **不建议做**。当前客户端和服务端的类型只有 `Task` 一个重叠。为了一个类型建一个 workspace package 是典型的过度设计。在 `packages/server/src/types/` 里定义一次，客户端手动维护即可。**如果未来有 5+ 共享类型再做**。
+
+---
+
+## 🔵 安全 / 生产就绪
+
+### 24. DashScope API 调用无超时
+
+`fetch()` 没有 `AbortSignal`。如果 DashScope API 挂起，请求永远阻塞。
+
+**解决**: 统一封装 `fetchWithTimeout(url, options, timeoutMs = 120_000)` 工具函数。
+
+### 25. SSE 流无法感知客户端断开
+
+客户端关闭标签页后，服务端继续轮询 DB 最多 10 分钟。
+
+**解决**: 用 `ReadableStream` 的 `cancel` 回调或 `AbortSignal`：
+```ts
+const stream = new ReadableStream({
+  start(controller) { /* 轮询逻辑 */ },
+  cancel() { aborted = true } // 客户端断开时触发
+})
+```
+
+### 26. `/files/:filename` 未校验路径穿越
+
+虽然 Elysia 路由会提取路径段阻止 `../`，但缺少纵深防御。
+
+**解决**: 3 行代码：
+```ts
+if (filename.includes('..')) { set.status = 400; return { error: 'Invalid filename' } }
+const resolved = resolve(storageDir, filename)
+if (!resolved.startsWith(storageDir)) { set.status = 403; return { error: 'Forbidden' } }
+```
+
+### 27. 端口硬编码
+
+`src/index.ts:15` 和 `vite.config.ts:16` 都硬编码 4000。
+
+**解决**: `const port = Number(process.env.PORT) || 4000`，vite 用环境变量或保持 4000。
+
+---
+
+## ⚪ 测试 / 文档
+
+### 28. 测试只覆盖 video 模块
+
+无 image 模块、pricing 模块、wan2.7 模型、SSE 端点测试。
+
+**解决**: 优先补充 image 模块测试（sync/async 双模式、imageUrls 验证、编辑模型验证）和 pricing 的 `getPricePerSecond` 测试（直接验证 #1 的修复）。
+
+### 29. 根目录缺 `test` 脚本
+
+**解决**: package.json 加 `"test": "bun run --cwd packages/server test"`。
+
+### 30. CLAUDE.md 缺少新增模型
 
 未记录 `wan2.7-i2v`、`qwen-image-edit-*`、`Wan27I2vForm`、`QwenImageEditForm`。
 
-**解决**: 更新 CLAUDE.md 的 Supported Models 和 Form Components 部分。
+**解决**: 更新 Supported Models 和 Form Components 部分。
 
----
+### 31. `@/*` 路径别名配置了但没用
 
-## 🔵 P3 — 健壮性 / 边界情况
+两个 tsconfig 都配了 `@/*` 别名，所有 import 用相对路径。
 
-### 18. SSE 流无法检测客户端断开
-
-`ReadableStream.start()` 中无 `cancel` 回调或 `AbortSignal`。客户端关闭后服务端继续轮询最多 10 分钟。
-
-**解决**: 使用 `ReadableStream` 的 `cancel` 回调停止轮询。
-
-### 19. 服务端重启后轮询丢失，任务卡在 PENDING/RUNNING
-
-`pollUntilDone` 是 fire-and-forget，服务重启后无恢复机制。
-
-**解决**: 启动时扫描非终态任务并恢复轮询。
-
-### 20. DashScope API 调用无超时
-
-`fetch()` 调用无 `AbortSignal`，如果 API 挂起则请求无限等待。
-
-**解决**: 添加 `AbortController` + 超时（如 120s）。
-
-### 21. 文件服务路径未做目录穿越校验
-
-`/files/:filename` 用 `resolve()` 拼接路径，虽然 Elysia 路由会提取路径段，但缺乏纵深防御。
-
-**解决**: 校验 `resolvedPath.startsWith(storageDir)`。
-
-### 22. 空的 `catch {}` 块吞掉所有错误
-
-`db/index.ts` 的 9 个 `ALTER TABLE` catch、`App.tsx` 的 `fetchTasks` catch、`TaskCard` 的 `JSON.parse` catch。
-
-**解决**: 至少添加 `console.error` 或 `logger.error`。
-
-### 23. `JSON.parse(e.data)` 在 SSE handler 中未保护
-
-`useTaskWatcher.ts` 中 `es.onmessage` 直接 `JSON.parse`，服务端发送畸形数据会抛异常断开连接。
-
-**解决**: 包裹 try-catch。
-
-### 24. `url.slice(0, 30) + i` 作为 React key
-
-5 处使用此模式。对 base64 data URL，前 30 字符完全相同（`data:image/png;base64,...`），key 退化为纯索引，排序时 reconciliation 出错。
-
-**解决**: 使用 `crypto.randomUUID()` 在插入时分配 ID，或用完整 URL hash。
-
-### 25. 乐观任务含 `Task` 接口外字段
-
-`App.tsx` 中 `id: -1`, `requestId: null` 不在 `Task` 接口中，通过 `as Task` 强转绕过。
-
-**解决**: 在 `Task` 接口中声明 `id?: number`, `requestId?: string | null`，或移除多余字段。
-
-### 26. 任务过滤逻辑依赖 `qwen-image` 前缀
-
-`App.tsx` 的 `filteredTasks` 用 `model.startsWith('qwen-image')` 判断图片任务。如果未来引入非 qwen 前缀的图片模型会误分类。
-
-**解决**: 从 `MODEL_GROUPS` 构建一个 `IMAGE_MODELS` Set，用它判断类别。
-
-### 27. `fetchStats` 只查 video 端点
-
-`App.tsx` 的 stats 只从 `/api/video/usage/stats` 获取。图片用户看到的统计为空。
-
-**解决**: 统一为一个 stats 端点（如 `/api/stats`），或分别获取并合并。
-
-### 28. 请求失败无用户反馈
-
-`handleGenerate` 中 API 返回错误时，只移除乐观卡片，不提示用户。
-
-**解决**: 增加 `toast` 或内联错误提示。
-
----
-
-## ⚪ P4 — 代码质量 / 测试 / 文档
-
-### 29. `as any` 类型断言 17+ 处
-
-路由 handler 和 service 中大量 `body as any`、`res.json() as any` 绕过类型检查。
-
-**解决**: 定义 DashScope API 的请求/响应接口，Elysia 的 `body` 类型已通过 `.model()` 声明，handler 中应直接使用。
-
-### 30. `UsageData` 接口不匹配实际图片任务数据
-
-`pricing/service.ts` 的 `UsageData` 定义 `duration`/`SR`，但图片任务存 `{ image_count, width, height }`。
-
-**解决**: 定义 `VideoUsageData` 和 `ImageUsageData` 联合类型，或让 `UsageData` 包含两种字段。
-
-### 31. 数据库用 `real` 存储金额
-
-浮点精度可能导致分币级误差。
-
-**解决**: 改用整数（分）存储，展示时转换。
-
-### 32. 服务端端口硬编码 4000
-
-`src/index.ts` 和 `vite.config.ts` 都硬编码。
-
-**解决**: 用 `process.env.PORT || 4000`，vite 代理读取同源。
-
-### 33. 测试覆盖不足
-
-- 无 image 模块测试
-- 无 wan2.7-i2v 验证测试
-- 无 pricing 模块测试
-- 无 SSE 端点测试
-- 无客户端测试
-
-### 34. 根目录无 `test` 脚本
-
-必须 `bun run --cwd packages/server test`，根目录 `bun test` 无效。
-
-**解决**: 根 package.json 添加 `"test": "bun run --cwd packages/server test"`。
-
-### 35. tsconfig 中 `@/*` 路径别名从未使用
-
-client 和 server 的 tsconfig 都配置了 `@/*` 别名，但所有 import 使用相对路径。
-
-**解决**: 要么在代码中使用 `@/` 导入，要么移除配置。
-
-### 36. 服务端 `abstract class` 只有 static 方法
-
-无实例化场景，`abstract` 无意义。
-
-**解决**: 改为导出一组普通函数，或移除 `abstract`。
+**解决**: 移除未使用的配置，减少认知负担。
