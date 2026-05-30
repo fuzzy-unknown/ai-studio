@@ -14,7 +14,8 @@ export interface UsageData {
 
 /** 获取模型 × 分辨率的实际单价（officialPrice × markup） */
 export async function getPricePerSecond(model: string, sr: number): Promise<number> {
-  const srKey = `${sr}`
+  // DashScope 返回的 SR 是数字（如 720, 1080），DB 存的是 "720P", "1080P"
+  const srKey = `${sr}P`
   const row = await db
     .select()
     .from(pricing)

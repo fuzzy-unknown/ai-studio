@@ -95,56 +95,42 @@ try {
 }
 catch {}
 
-// 种子数据：HappyHorse 官方价格（仅在表为空时插入）
-const existingPricing = sqlite.prepare('SELECT COUNT(*) as cnt FROM pricing').get() as any
-if (existingPricing.cnt === 0) {
-  const models = [
-    'happyhorse-1.0-t2v',
-    'happyhorse-1.0-i2v',
-    'happyhorse-1.0-r2v',
-    'happyhorse-1.0-video-edit',
-  ]
-  const insert = sqlite.prepare(
-    'INSERT OR IGNORE INTO pricing (model, resolution, official_price, markup) VALUES (?, ?, ?, ?)',
-  )
-  for (const model of models) {
-    insert.run(model, '720P', 0.9, 1.0)
-    insert.run(model, '1080P', 1.6, 1.0)
-  }
-  // 万相2.7 图生视频定价（元/秒）
-  insert.run('wan2.7-i2v-2026-04-25', '720P', 0.6, 1.0)
-  insert.run('wan2.7-i2v-2026-04-25', '1080P', 1.0, 1.0)
-  // 千问文生图模型定价（元/张）
-  const imageModels = [
-    'qwen-image-2.0-pro',
-    'qwen-image-2.0',
-    'qwen-image-max',
-    'qwen-image-plus',
-  ]
-  const imagePricing: Record<string, [string, number][]> = {
-    'qwen-image-2.0-pro': [['2048*2048', 0.5]],
-    'qwen-image-2.0': [['2048*2048', 0.2]],
-    'qwen-image-max': [['1664*928', 0.5]],
-    'qwen-image-plus': [['1664*928', 0.2]],
-  }
-  for (const model of imageModels) {
-    for (const [size, price] of imagePricing[model])
-      insert.run(model, size, price, 1.0)
-  }
-  // 千问图像编辑模型定价（元/张）
-  const editModels = [
-    'qwen-image-edit-max',
-    'qwen-image-edit-plus',
-    'qwen-image-edit',
-  ]
-  const editPricing: Record<string, number> = {
-    'qwen-image-edit-max': 0.5,
-    'qwen-image-edit-plus': 0.2,
-    'qwen-image-edit': 0.3,
-  }
-  for (const model of editModels) {
-    insert.run(model, '1024*1024', editPricing[model], 1.0)
-  }
+// 种子数据：增量插入（INSERT OR IGNORE 保证幂等，已存在的条目不会重复）
+const insert = sqlite.prepare(
+  'INSERT OR IGNORE INTO pricing (model, resolution, official_price, markup) VALUES (?, ?, ?, ?)',
+)
+// HappyHorse 视频模型定价（元/秒）
+const videoModels = [
+  'happyhorse-1.0-t2v',
+  'happyhorse-1.0-i2v',
+  'happyhorse-1.0-r2v',
+  'happyhorse-1.0-video-edit',
+]
+for (const model of videoModels) {
+  insert.run(model, '720P', 0.9, 1.0)
+  insert.run(model, '1080P', 1.6, 1.0)
+}
+// 万相2.7 图生视频定价（元/秒）
+insert.run('wan2.7-i2v-2026-04-25', '720P', 0.6, 1.0)
+insert.run('wan2.7-i2v-2026-04-25', '1080P', 1.0, 1.0)
+// 千问文生图模型定价（元/张）
+const imagePricing: [string, string, number][] = [
+  ['qwen-image-2.0-pro', '2048*2048', 0.5],
+  ['qwen-image-2.0', '2048*2048', 0.2],
+  ['qwen-image-max', '1664*928', 0.5],
+  ['qwen-image-plus', '1664*928', 0.2],
+]
+for (const [model, size, price] of imagePricing) {
+  insert.run(model, size, price, 1.0)
+}
+// 千问图像编辑模型定价（元/张）
+const editPricing: [string, number][] = [
+  ['qwen-image-edit-max', 0.5],
+  ['qwen-image-edit-plus', 0.2],
+  ['qwen-image-edit', 0.3],
+]
+for (const [model, price] of editPricing) {
+  insert.run(model, '1024*1024', price, 1.0)
 }
 
 export const db = drizzle(sqlite, { schema })
