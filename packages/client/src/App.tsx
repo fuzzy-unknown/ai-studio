@@ -103,7 +103,7 @@ export default function App() {
         ? { ...t, status: event.status, videoUrl: event.video_url ?? t.videoUrl, errorMessage: event.error ?? t.errorMessage }
         : t,
     ))
-    if (['SUCCEEDED', 'FAILED', 'UNKNOWN'].includes(event.status)) {
+    if (['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED', 'ERROR'].includes(event.status)) {
       fetchTasks()
       fetchStats()
     }

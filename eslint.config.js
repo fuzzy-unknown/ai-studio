@@ -1,7 +1,7 @@
 import antfu from '@antfu/eslint-config'
 
 export default antfu({
-  ignores: ['docs/**'],
+  ignores: ['docs/**', 'packages/server/docs/**'],
   react: true,
   typescript: true,
   rules: {

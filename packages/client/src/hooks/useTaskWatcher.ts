@@ -57,7 +57,10 @@ export function useTaskWatcher(
 
       es.onmessage = (e) => {
         const data = JSON.parse(e.data) as TaskEvent
-        onUpdateRef.current(id, data)
+        if (data.status !== 'DONE') {
+          // DONE 是 SSE 流关闭信号，不是任务状态，不应写入任务数据
+          onUpdateRef.current(id, data)
+        }
         if (TERMINAL.has(data.status))
           closeConnection(id)
       }
