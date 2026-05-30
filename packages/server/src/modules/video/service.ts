@@ -3,6 +3,8 @@ import process from 'node:process'
 import { desc, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tasks } from '../../db/schema'
+import { calculateCost as dbCalculateCost } from '../pricing/service'
+import type { UsageData } from '../pricing/service'
 import { logger } from '../../utils/logger'
 import { downloadVideo } from '../../utils/storage'
 
@@ -11,35 +13,6 @@ const TERMINAL_STATES = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN', 'CANCELED'])
 const I2V_MODEL = 'happyhorse-1.0-i2v'
 const R2V_MODEL = 'happyhorse-1.0-r2v'
 const VIDEO_EDIT_MODEL = 'happyhorse-1.0-video-edit'
-
-// 单价配置：元/秒，key 格式为 `${SR}` 或 `${model}:${SR}`
-// SR: 720 或 1080（对应 720P / 1080P）
-const DEFAULT_PRICING: Record<string, number> = {
-  720: 0.04,
-  1080: 0.08,
-}
-
-function getPricePerSecond(sr: number, _model?: string): number {
-  const key = String(sr)
-  const envKey = `PRICE_SR_${key}`
-  const envVal = process.env[envKey]
-  if (envVal)
-    return Number(envVal)
-  return DEFAULT_PRICING[key] || 0
-}
-
-export interface UsageData {
-  duration: number
-  input_video_duration: number
-  output_video_duration: number
-  video_count: number
-  SR: number
-}
-
-export function calculateCost(usage: UsageData): number {
-  const pricePerSec = getPricePerSecond(usage.SR)
-  return Number((usage.duration * pricePerSec).toFixed(4))
-}
 
 const ERROR_CODE_MAP: Record<string, string> = {
   'InvalidApiKey': 'API Key 无效，请检查 DASHSCOPE_API_KEY 配置',
@@ -147,14 +120,14 @@ async function callDashScopeCreate(params: CreateTaskParams): Promise<DashScopeC
   if (!videoEdit) {
     parameters.duration = params.duration || 5
   }
-  if (videoEdit) {
-    if (params.watermark !== undefined)
-      parameters.watermark = params.watermark
-    if (params.audioSetting)
-      parameters.audio_setting = params.audioSetting
-    if (params.seed !== undefined)
-      parameters.seed = params.seed
-  }
+  // 所有模型都支持 watermark 和 seed
+  if (params.watermark !== undefined)
+    parameters.watermark = params.watermark
+  if (params.seed !== undefined)
+    parameters.seed = params.seed
+  // audio_setting 仅 video-edit 支持
+  if (videoEdit && params.audioSetting)
+    parameters.audio_setting = params.audioSetting
 
   const body = { model, input, parameters }
 
@@ -263,6 +236,14 @@ export abstract class VideoService {
   ): Promise<void> {
     logger.info({ taskId, status, videoUrl: videoUrl ? videoUrl.slice(0, 80) : undefined }, '[VideoService] Updating task status')
 
+    // 查询任务对应的模型，用于定价计算
+    let cost: number | null = null
+    if (usage) {
+      const taskRow = await db.select({ model: tasks.model }).from(tasks).where(eq(tasks.taskId, taskId)).get()
+      const model = taskRow?.model || 'happyhorse-1.0-t2v'
+      cost = await dbCalculateCost(model, usage)
+    }
+
     await db
       .update(tasks)
       .set({
@@ -270,6 +251,7 @@ export abstract class VideoService {
         videoUrl: videoUrl || null,
         errorMessage: errorMessage || null,
         usage: usage ? JSON.stringify(usage) : null,
+        cost,
         updatedAt: sql`(datetime('now'))`,
       })
       .where(eq(tasks.taskId, taskId))
@@ -307,11 +289,15 @@ export abstract class VideoService {
     let totalCost = 0
     let taskCount = 0
     for (const task of allTasks) {
-      if (task.status === 'SUCCEEDED' && task.usage) {
-        const usage = JSON.parse(task.usage) as UsageData
-        totalDuration += usage.duration
-        totalCost += calculateCost(usage)
+      if (task.status === 'SUCCEEDED' && task.cost != null) {
+        // 使用 DB 中已存储的 cost，与 TaskCard 显示一致
+        totalCost += task.cost
         taskCount++
+        // duration 从 usage 中提取
+        if (task.usage) {
+          const usage = JSON.parse(task.usage) as UsageData
+          totalDuration += usage.duration
+        }
       }
     }
     return { totalDuration, totalCost: Number(totalCost.toFixed(4)), taskCount }

@@ -1,20 +1,22 @@
 import { Elysia } from 'elysia'
+import { logger } from '../utils/logger'
 
 export const errorPlugin = new Elysia({ name: 'plugin:error' })
   .onError(({ code, error, status }) => {
+    const message = (error instanceof Error ? error.message : String(error)) || String(error)
+
     switch (code) {
       case 'VALIDATION':
-        return status(400, {
-          error: 'Validation Error',
-          details: error.all.map(e => e.message),
-        })
+        logger.warn({ code, details: error.all?.map(e => e.message) }, '[Error] Validation failed')
+        return status(400, { error: 'Validation Error', details: error.all?.map(e => e.message) })
       case 'NOT_FOUND':
         return status(404, { error: 'Not Found' })
       case 'UNKNOWN':
-        console.error('[ERROR] Unhandled:', error)
-        return status(500, { error: 'Internal Server Error' })
+        logger.error({ code, error: message, stack: error instanceof Error ? error.stack : undefined }, '[Error] Unhandled')
+        return status(500, { error: message })
       default:
-        return status(500, { error: String(error) })
+        logger.error({ code, error: message }, '[Error]')
+        return status(500, { error: message })
     }
   })
   .as('global')

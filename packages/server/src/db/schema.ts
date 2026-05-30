@@ -1,5 +1,20 @@
 import { sql } from 'drizzle-orm'
-import { int, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { int, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+
+// 定价配置表：按模型 × 分辨率存储价格
+export const pricing = sqliteTable('pricing', {
+  id: int().primaryKey({ autoIncrement: true }),
+  model: text('model').notNull(),           // 模型 ID，如 happyhorse-1.0-t2v
+  resolution: text('resolution').notNull(),  // 分辨率，如 720P、1080P
+  officialPrice: real('official_price').notNull(), // 官方单价（元/秒）
+  markup: real('markup').notNull().default(1.0),   // 加价倍率，1.0 = 不加价
+  // 实际单价 = officialPrice × markup
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+})
+
+export type Pricing = typeof pricing.$inferSelect
+export type NewPricing = typeof pricing.$inferInsert
 
 export const tasks = sqliteTable('tasks', {
   id: int().primaryKey({ autoIncrement: true }),
@@ -15,6 +30,7 @@ export const tasks = sqliteTable('tasks', {
   videoUrl: text('video_url'),
   localPath: text('local_path'),
   usage: text('usage'),
+  cost: real('cost'),
   errorMessage: text('error_message'),
   requestId: text('request_id'),
   createdAt: text('created_at').default(sql`(datetime('now'))`),

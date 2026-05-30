@@ -17,10 +17,12 @@ export interface Task {
   inputVideoUrl: string | null
   inputImageUrl: string | null
   usage: string | null
+  cost: number | null
   videoUrl: string | null
   localPath: string | null
   errorMessage: string | null
   createdAt: string | null
+  updatedAt: string | null
 }
 
 export interface UsageStats {

@@ -31,6 +31,38 @@ export const videoModule = new Elysia({ prefix: '/api/video', name: 'module:vide
   }, {
     body: 'generateBody',
     response: { 200: 'generateResponse' },
+    beforeHandle: ({ body, set }) => {
+      const b = body as any
+      const model = b.model || 'happyhorse-1.0-t2v'
+
+      const isI2v = model === 'happyhorse-1.0-i2v'
+      const isR2v = model === 'happyhorse-1.0-r2v'
+      const isVideoEdit = model === 'happyhorse-1.0-video-edit'
+
+      // 各模型必填字段校验
+      if (isI2v && !b.imageUrl) {
+        set.status = 400
+        return { error: 'imageUrl is required for image-to-video model' }
+      }
+      if (isR2v && (!b.imageUrls || b.imageUrls.length === 0)) {
+        set.status = 400
+        return { error: 'imageUrls is required for reference-to-video model' }
+      }
+      if (isVideoEdit && !b.videoUrl) {
+        set.status = 400
+        return { error: 'videoUrl is required for video-edit model' }
+      }
+
+      // imageUrls 数量校验
+      if (isR2v && b.imageUrls && (b.imageUrls.length < 1 || b.imageUrls.length > 9)) {
+        set.status = 400
+        return { error: 'imageUrls must contain 1-9 images for reference-to-video model' }
+      }
+      if (isVideoEdit && b.imageUrls && b.imageUrls.length > 5) {
+        set.status = 400
+        return { error: 'imageUrls must contain 0-5 images for video-edit model' }
+      }
+    },
   })
   .get('/tasks', () => VideoService.getAllTasks(), {
     response: { 200: 'taskListResponse' },

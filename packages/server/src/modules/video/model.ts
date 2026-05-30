@@ -41,6 +41,7 @@ export const TaskResponse = t.Object({
   inputVideoUrl: t.Nullable(t.String()),
   inputImageUrl: t.Nullable(t.String()),
   usage: t.Nullable(t.String()),
+  cost: t.Nullable(t.Number()),
   videoUrl: t.Nullable(t.String()),
   localPath: t.Nullable(t.String()),
   errorMessage: t.Nullable(t.String()),

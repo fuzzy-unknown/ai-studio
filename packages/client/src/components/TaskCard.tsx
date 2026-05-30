@@ -1,4 +1,4 @@
-import type { Task, UsageData } from '../types'
+import type { Task } from '../types'
 
 interface Props {
   task: Task
@@ -54,32 +54,16 @@ function getVideoSrc(task: Props['task']): string | null {
   return null
 }
 
-const PRICE_PER_SECOND: Record<number, number> = { 720: 0.04, 1080: 0.08 }
-
-function getUsageCost(task: Task): { duration: number, cost: number } | null {
-  if (!task.usage)
-    return null
-  try {
-    const u = JSON.parse(task.usage) as UsageData
-    const price = PRICE_PER_SECOND[u.SR] || 0
-    return { duration: u.duration, cost: Number((u.duration * price).toFixed(2)) }
-  }
-  catch {
-    return null
-  }
-}
-
 function TaskMeta({ task }: Props) {
-  const costInfo = getUsageCost(task)
   return (
     <div className="task-meta">
       <span className="task-model-tag">{MODEL_LABELS[task.model || 'happyhorse-1.0-t2v'] || task.model}</span>
       <span>{task.resolution}</span>
       {task.ratio && <span>{task.ratio}</span>}
       {task.duration && <span>{`${task.duration}s`}</span>}
-      {costInfo && (
+      {task.cost != null && (
         <span className="task-cost-tag">
-          {costInfo.cost}
+          {task.cost.toFixed(2)}
           {' '}
           元
         </span>

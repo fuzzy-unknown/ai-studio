@@ -294,16 +294,18 @@ export function GenerateForm({ onSubmit, loading }: Props) {
       data.videoUrl = videoUrl
       if (finalImageUrls.length > 0)
         data.imageUrls = finalImageUrls
-      data.watermark = watermark
       if (audioSetting !== 'auto')
         data.audioSetting = audioSetting
-      if (seed !== undefined)
-        data.seed = seed
     }
     else {
       data.ratio = ratio
       data.duration = duration
     }
+
+    // watermark 和 seed 所有模型都支持
+    data.watermark = watermark
+    if (seed !== undefined)
+      data.seed = seed
 
     onSubmit(data)
     setEditorContent('')
@@ -488,28 +490,28 @@ export function GenerateForm({ onSubmit, loading }: Props) {
         )}
       </div>
 
-      {isEdit && (
-        <div className="advanced-section">
-          <button
-            type="button"
-            className="advanced-toggle"
-            onClick={() => setShowAdvanced(prev => !prev)}
-          >
-            高级选项
-            {' '}
-            {showAdvanced ? '▼' : '▶'}
-          </button>
-          {showAdvanced && (
-            <div className="advanced-options">
-              <label className="form-label">
-                <input
-                  type="checkbox"
-                  checked={watermark}
-                  onChange={e => setWatermark(e.target.checked)}
-                  disabled={loading}
-                />
-                添加水印
-              </label>
+      <div className="advanced-section">
+        <button
+          type="button"
+          className="advanced-toggle"
+          onClick={() => setShowAdvanced(prev => !prev)}
+        >
+          高级选项
+          {' '}
+          {showAdvanced ? '▼' : '▶'}
+        </button>
+        {showAdvanced && (
+          <div className="advanced-options">
+            <label className="form-label">
+              <input
+                type="checkbox"
+                checked={watermark}
+                onChange={e => setWatermark(e.target.checked)}
+                disabled={loading}
+              />
+              添加水印
+            </label>
+            {isEdit && (
               <label className="form-label">
                 声音控制
                 <select value={audioSetting} onChange={e => setAudioSetting(e.target.value)} disabled={loading}>
@@ -517,23 +519,23 @@ export function GenerateForm({ onSubmit, loading }: Props) {
                   <option value="origin">保留原声</option>
                 </select>
               </label>
-              <label className="form-label">
-                随机种子
-                <input
-                  type="number"
-                  min={0}
-                  max={2147483647}
-                  placeholder="留空则随机"
-                  value={seed ?? ''}
-                  onChange={e => setSeed(e.target.value ? Number(e.target.value) : undefined)}
-                  disabled={loading}
-                  className="seed-input"
-                />
-              </label>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+            <label className="form-label">
+              随机种子
+              <input
+                type="number"
+                min={0}
+                max={2147483647}
+                placeholder="留空则随机"
+                value={seed ?? ''}
+                onChange={e => setSeed(e.target.value ? Number(e.target.value) : undefined)}
+                disabled={loading}
+                className="seed-input"
+              />
+            </label>
+          </div>
+        )}
+      </div>
 
       <button type="submit" disabled={!canSubmit}>
         {loading ? '生成中...' : '生成视频'}
