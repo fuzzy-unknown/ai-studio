@@ -55,32 +55,17 @@ function isWan27I2v(model: string | null): boolean {
 function getRefImages(task: Task): string[] {
   if (!task.inputImageUrl)
     return []
-  // wan2.7 存储为 [imageUrl, lastFrameUrl, drivingAudioUrl, firstClipUrl] 的 JSON 数组
-  if (isWan27I2v(task.model)) {
-    try {
-      const parsed = JSON.parse(task.inputImageUrl)
-      if (Array.isArray(parsed))
+  // 统一尝试 JSON 解析：多图场景存为 JSON 数组
+  try {
+    const parsed = JSON.parse(task.inputImageUrl)
+    if (Array.isArray(parsed)) {
+      // wan2.7 过滤掉音频 URL
+      if (isWan27I2v(task.model))
         return parsed.filter((url: string) => !isAudioUrl(url))
+      return parsed
     }
-    catch {}
   }
-  if (isImageEditModel(task.model)) {
-    try {
-      const parsed = JSON.parse(task.inputImageUrl)
-      if (Array.isArray(parsed))
-        return parsed
-    }
-    catch {}
-    return [task.inputImageUrl]
-  }
-  if (isR2v(task.model) || isVideoEdit(task.model)) {
-    try {
-      const parsed = JSON.parse(task.inputImageUrl)
-      if (Array.isArray(parsed))
-        return parsed
-    }
-    catch {}
-  }
+  catch {}
   return [task.inputImageUrl]
 }
 
